@@ -1,36 +1,27 @@
 """Pinea ventana + captura screenshot a disco. Read-only: no inyecta teclas."""
 import asyncio
-import json
 import os
 import sys
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-REPO = r"C:\Users\juanp_8h8f07l\dev\mcp-anydesk"
-PY = os.path.join(REPO, ".venv", "Scripts", "python.exe")
-
-
-async def call(session, name, args=None):
-    res = await session.call_tool(name, args or {})
-    texts = [c.text for c in res.content if getattr(c, "text", None)]
-    return {"isError": res.isError, "text": "\n".join(texts)}
+from _mcp import call, connect, need_hwnd, report
 
 
 async def main():
-    hwnd = int(sys.argv[1]) if len(sys.argv) > 1 else 198526
+    hwnd = need_hwnd(sys.argv, extra=" [tag]")
     tag = sys.argv[2] if len(sys.argv) > 2 else "p1"
-    params = StdioServerParameters(command=PY, args=["-m", "mcp_anydesk_server"], cwd=REPO)
-    async with stdio_client(params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            r = await call(session, "select_anydesk_window", {"hwnd": hwnd})
-            print("PIN:", json.dumps(r, ensure_ascii=False)[:300])
-            r = await call(session, "initialize_session")
-            print("INIT:", json.dumps(r, ensure_ascii=False)[:300])
-            r = await call(session, "capture_screenshot", {"scale_percent": 100})
-            print("SHOT:", json.dumps(r, ensure_ascii=False)[:500])
-            print("TAG:", tag)
+    failed = 0
+    async with connect() as session:
+        failed |= report("PIN", await call(session, "select_anydesk_window", {"hwnd": hwnd}), limit=300)
+        if failed:
+            sys.exit(failed)
+        failed |= report("INIT", await call(session, "initialize_session"), limit=300)
+        if failed:
+            sys.exit(failed)
+        failed |= report("SHOT", await call(session, "capture_screenshot", {"scale_percent": 100}), limit=500)
+        print("TAG:", tag)
+    sys.exit(failed)
 
 
 asyncio.run(main())

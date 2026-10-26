@@ -1,32 +1,25 @@
 """OCR read-only de la ventana pineada. No inyecta nada."""
 import asyncio
-import json
 import os
 import sys
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-REPO = r"C:\Users\juanp_8h8f07l\dev\mcp-anydesk"
-PY = os.path.join(REPO, ".venv", "Scripts", "python.exe")
-
-
-async def call(session, name, args=None):
-    res = await session.call_tool(name, args or {})
-    texts = [c.text for c in res.content if getattr(c, "text", None)]
-    return {"isError": res.isError, "text": "\n".join(texts)}
+from _mcp import call, connect, need_hwnd, report
 
 
 async def main():
-    hwnd = int(sys.argv[1]) if len(sys.argv) > 1 else 198526
-    params = StdioServerParameters(command=PY, args=["-m", "mcp_anydesk_server"], cwd=REPO)
-    async with stdio_client(params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            await call(session, "select_anydesk_window", {"hwnd": hwnd})
-            await call(session, "initialize_session")
-            r = await call(session, "read_from_anydesk", {"mode": "ocr"})
-            print(json.dumps(r, ensure_ascii=False)[:3000])
+    hwnd = need_hwnd(sys.argv)
+    failed = 0
+    async with connect() as session:
+        failed |= report("PIN", await call(session, "select_anydesk_window", {"hwnd": hwnd}), limit=300)
+        if failed:
+            sys.exit(failed)
+        failed |= report("INIT", await call(session, "initialize_session"), limit=300)
+        if failed:
+            sys.exit(failed)
+        failed |= report("OCR", await call(session, "read_from_anydesk", {"mode": "ocr"}), limit=3000)
+    sys.exit(failed)
 
 
 asyncio.run(main())
