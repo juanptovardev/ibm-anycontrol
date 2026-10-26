@@ -1,1 +1,1 @@
-id,direccion_texto,comuna,cuenta_matriz_esperada,estado,paginas_vistas,filas_copiadas,hora_inicio,hora_fin,evidencia,notas,reintentos
+id,direccion_parte1,direccion_parte2,comuna,cuenta_matriz_esperada,estado,paginas_vistas,filas_copiadas,hora_inicio,hora_fin,evidencia,notas,reintentos

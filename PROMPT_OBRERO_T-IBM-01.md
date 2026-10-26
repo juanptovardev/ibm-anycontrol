@@ -23,8 +23,9 @@ cell by cell. One row = one subscriber. Done = all rows terminal
   pinned window, inventing addresses.
 
 ## Loop per item (no skipping)
-1. Read row `i` (id, direccion_texto, comuna, cuenta_matriz_esperada).
-   Record `hora_inicio`.
+1. Read row `i` (id, direccion_parte1, direccion_parte2, comuna,
+   cuenta_matriz_esperada). Record `hora_inicio`. Field map: parte1 →
+   calle field, parte2 → no-casa field, numpad `+` after each part.
 2. Screenshot IBM → OCR → compare vs expected. Count each read in
    `paginas_vistas`.
 3. Gates: G1 OCR legibility ≥ Fase-1 threshold · G2 address similarity ≥ 0.90

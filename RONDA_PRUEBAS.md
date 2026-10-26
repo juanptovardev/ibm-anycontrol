@@ -66,11 +66,11 @@ Criterio go: T0a–T0c PASS → el mecanismo viaja → sigue el agente personali
 
 ## FASE 3 — Piloto N≤5 con ledger (yo como obrero, tú aprobando cada inyección)
 
-Entrada: copia `datos/datos_ejemplo.csv` → `datos/datos.csv` con los N datos reales (mismas 4 columnas: id, direccion_texto, comuna, cuenta_matriz_esperada). Sin `datos/datos.csv` no arranca la fase.
+Entrada: copia `datos/datos_ejemplo.csv` → `datos/datos.csv` con los N datos reales (6 columnas: id, direccion_parte1, direccion_parte2, comuna, cuenta_matriz_esperada, nota). Sin `datos/datos.csv` no arranca la fase. Mapeo IBM: parte1 → campo calle, parte2 → campo no-casa, `+` numérico al final de cada parte. Verificar antes de arrancar: `(Import-Csv datos/datos.csv | Get-Member -MemberType NoteProperty).Name` debe ser exactamente `id,direccion_parte1,direccion_parte2,comuna,cuenta_matriz_esperada,nota`. Filas piloto pueden traer `cuenta_matriz_esperada` vacía (entonces la verificación de cuenta es solo visual/operador, no G2).
 
 Por cada ítem `i` del `datos/datos.csv`, ejecuto exactamente esto:
 
-1. Leo la fila `i` (id, direccion_texto, comuna, cuenta_matriz_esperada). Registro `hora_inicio`.
+1. Leo la fila `i` (id, direccion_parte1, direccion_parte2, comuna, cuenta_matriz_esperada). Registro `hora_inicio`.
 2. Pantallazo IBM → OCR → comparo contra lo esperado. Cuento en `paginas_vistas` cada pantallazo IBM leído.
 3. Gates: G1 legibilidad OCR ≥ umbral fijado en Fase 1 (paso 5) · G2 similitud dirección ≥ 0.90 · G3 filas a pegar 1–50. Si un gate falla → `esperar_operador`, no avanzo.
 4. `jev_classify` [ejecutar, esperar_operador, abortar] antes de CADA inyección (en modo degradado: tu aprobación manual reemplaza este paso).
