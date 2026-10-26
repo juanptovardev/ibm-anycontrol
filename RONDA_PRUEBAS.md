@@ -25,7 +25,7 @@ Prerrequisitos (medidos el 2026-10-26, ver `tools/verifications/fase1-salud.md`)
 
 Comandos ejecutables con output esperado (no adjetivos):
 
-1. `python test_mcp_smoke.py` en `dev/mcp-anydesk` → esperado: lista 18 tools, `ocr_capable=true/false` REGISTRADO por perfil (resuelve inconsistencia #2).
+1. `python test_mcp_smoke.py` en `dev/mcp-anydesk` → esperado: lista 19 tools, `ocr_capable=true/false` REGISTRADO por perfil (resuelve inconsistencia #2).
 2. `python test_mcp_smoke.py` en `dev/jev-gate` → esperado: 6 tools, `key_present=true`.
 3. Llamar `jev_score` con un texto OCR real corto → esperado: REGISTRAR escala real devuelta (resuelve inconsistencia #1: ¿0–2 o 2–10?).
 4. Llamar `jev_status` → esperado: `model=free/jev-1.13`, `http_status=200` (402 = hacer check-in diario primero; 502 = modo degradado).
