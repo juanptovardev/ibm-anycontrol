@@ -8,14 +8,14 @@ se pega en la hoja de limpieza.
 
 | # | Acción | Detalle |
 |---|---|---|
-| 1 | `Shift` mantenido | la barra del cursor pasa a ser selector |
-| 2 | 7 × `Abajo` | baja al primer renglón de datos |
+| 1 | 7 × `Abajo` **sin** Shift | mueve el cursor al primer renglón de datos |
+| 2 | `Shift` mantenido | la barra del cursor pasa a ser selector |
 | 3 | 72 × `Derecha` | cubre horizontal de `Direccion` a `Suscript` |
 | 4 | 14 × `Abajo` | 15 filas en total |
 | 5 | soltar `Shift` | la selección queda fija |
 | 6 | `Ctrl+C` | copia al portapapeles remoto |
 | 7 | `Alt+Tab` | pasa a la hoja de limpieza |
-| 8 | `Ctrl+V` | pega |
+| 8 | `Ctrl+Shift+V` | pega sin formato |
 | 9 | `Ctrl+Shift+Abajo` | selecciona hasta el final de la columna |
 | 10 | 1 × `Abajo` | deja la celda lista para el siguiente pegado |
 
@@ -41,7 +41,7 @@ Constantes del bloque (congeladas, con test que falla si cambian sin querer):
 | G0 | la pantalla es el listado (`estado == cuenta_matriz`) | aborta, no teclea |
 | G1 | la selección es un rectángulo macizo (`densidad ≥ 0.30`) y de tamaño plausible | aborta antes de Ctrl+C |
 | G2 | tras `Alt+Tab` la pantalla **no** es IBM | aborta, no pega |
-| G3 | tras `Ctrl+V` hubo cambio visible (`≥ 3000 px`) | un reintento y aborta |
+| G3 | tras `Ctrl+Shift+V` hubo cambio visible (`≥ 3000 px`) | un reintento y aborta |
 
 G1 imprime además el OCR de la primera línea de la selección: si ahí aparece
 la cabecera (`Direccion Apto…`), el bloque empezó una fila arriba y hay que

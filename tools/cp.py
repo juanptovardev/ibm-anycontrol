@@ -2,10 +2,10 @@
 
 FLUJO DEL OPERADOR (congelado, no reinterpretar):
   1. En el listado CONSULTA UNIDADES, el cursor esta en su posicion inicial.
-  2. Shift mantenido + 7 abajo + 72 derecha + 14 abajo -> bloque de 72
+  2. 7 abajo SIN shift, luego Shift + 72 derecha + 14 abajo -> bloque de 72
      caracteres (Direccion .. Suscriptor) por 15 filas.
   3. Se suelta Shift. Ctrl+C.
-  4. Alt+Tab a la hoja. Ctrl+V.
+  4. Alt+Tab a la hoja. Ctrl+Shift+V (pegar sin formato).
   5. Ctrl+Shift+Abajo y luego un Abajo -> celda lista para el siguiente pegado.
 
 El bloque copiado no se puede leer desde aqui: el portapapeles vive en la
@@ -65,8 +65,15 @@ def texto_superior(img: Image.Image, caja: tuple) -> str:
 
 
 async def _seleccionar(s, hwnd: int, antes: Image.Image, dry: bool) -> tuple:
-    """Shift + bajadas + derechas + bajadas, soltando el shift al final."""
-    teclas = ["shift"] + ["down"] * BAJAR_INICIO + ["right"] * ANCHO + ["down"] * ALTO
+    """7 abajo SIN shift, luego Shift + 72 derecha + 14 abajo.
+
+    El shift empieza DESPUES de bajar 7: las bajadas iniciales mueven el
+    cursor, no la seleccion. Si se pulsan con shift, se marca una columna
+    vertical antes de tiempo y el bloque sale corrido.
+    """
+    await pf.step(s, "bajar_inicio", "press_keys",
+                  {"keys": ["down"] * BAJAR_INICIO, "key_delay_ms": KEY_DELAY_MS})
+    teclas = ["shift"] + ["right"] * ANCHO + ["down"] * ALTO
     await pf.step(s, "seleccion", "press_keys",
                   {"keys": teclas, "key_delay_ms": KEY_DELAY_MS})
     await asyncio.sleep(0.3)
@@ -96,13 +103,13 @@ async def _pegar(s, hwnd: int) -> None:
     if st["estado"] is not None:
         raise pf.Halt("G2 tras Alt+Tab sigue siendo la pantalla IBM: no se pega")
     antes = pf.shot(hwnd, "cp-pre-paste")
-    await pf.step(s, "ctrl_v", "paste_clipboard", {})
+    await pf.step(s, "ctrl_shift_v", "paste_clipboard", {"shift": True})
     await asyncio.sleep(1.2)
     despues = pf.shot(hwnd, "cp-post-paste")
     diff = pf.changed_px(antes, despues)
     if diff < PASTE_MIN_DIFF:
         print(f"G3 sin cambio visible ({diff}px): un reintento", flush=True)
-        await pf.step(s, "ctrl_v_retry", "paste_clipboard", {})
+        await pf.step(s, "ctrl_shift_v_retry", "paste_clipboard", {"shift": True})
         await asyncio.sleep(1.2)
         despues = pf.shot(hwnd, "cp-post-paste-retry")
         diff = pf.changed_px(antes, despues)
