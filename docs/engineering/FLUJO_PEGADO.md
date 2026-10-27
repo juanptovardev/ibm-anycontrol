@@ -73,8 +73,33 @@ portapapeles, pero sin depender de esa tecla.
 Cada paso es un comando con salida verificable: si uno no cuadra, el
 siguiente no se ejecuta.
 
+## Plan A: Shift+Clic (menos pulsaciones, mismo resultado)
+
+La receta de arriba gasta 93 pulsaciones (~8 s). El operador propuso
+sustituir la selección por un gesto de ratón:
+
+```text
+7xAbajo -> Shift abajo -> CLIC en la ultima celda (ultima fila, columna Suscript)
+        -> Shift arriba -> Ctrl+C -> Alt+Tab -> Ctrl+Shift+V -> Ctrl+Shift+Abajo -> Abajo
+```
+
+El emulador extiende la selección desde el cursor hasta la celda clicada, así
+que el bloque sale idéntico al del plan B con 1 lote de teclas y 1 clic.
+
+Implementación: `tools/click_sel.py` (reutiliza copiar/pegar/posicionar de
+`cp.py`). Las coordenadas no están hardcodeadas: se miden con OCR sobre la
+captura 1:1 (`target_celda`: cabecera `Suscript` + borde derecho de los códigos
+de suscriptor + última fila con texto) y después se valida con `sel_box`.
+
+Prerrequisito en el servidor: `click_point(..., shift=True)` (v3.7.3), que baja
+Shift, hace el clic y suelta Shift en `finally` aunque el clic falle.
+
+Puertas: A1 (objetivo encontrado by OCR) y A2 (el clic cae DENTRO del
+rectángulo amarillo, ancho ≥ 500 px, alto ≥ 150 px). Luego G2 y G3 de `cp.py`.
+
 ## Estado
 
-- Código: escrito y con tests (61 en el repo). **No ejecutado en vivo.**
-- Pendiente de validar con el operador: `cp.py --dry` (medir la selección),
-  y después la corrida real de copiar/pegar.
+- Plan B (`cp.py`): **ejecutado en vivo con éxito** el 2026-10-27 — 15 filas
+  pegadas en la hoja `LIMPIEZA RR`, suscriptores alineados en la columna J.
+- Plan A (`click_sel.py`): escrito y con tests. **No ejecutado en vivo.**
+- Tests del repo: 69 (`python -m unittest discover -s tests`).
