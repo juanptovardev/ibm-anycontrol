@@ -86,13 +86,13 @@ async def espera_estado(hwnd: int, objetivos: set[str], intentos: int = 8,
 
 async def buscar(s, hwnd: int, det: list, parte1: str, parte2: str) -> None:
     """Macro de busqueda validada: clic, flechas, step1, +, step2, +, F10."""
-    calle = det[1]
-    punto = {"x": calle["field_x"] + 4, "y": calle["cy"]}
-    # El primer clic puede consumirse activando la ventana de AnyDesk.
-    await pf.step(s, "clic_celda1", "click_point", punto)
-    await asyncio.sleep(0.25)
-    await pf.step(s, "clic_celda1b", "click_point", punto)
-    await asyncio.sleep(0.25)
+    calle = det[CALLE]
+    # UN solo clic pegado al borde izquierdo del subrayado (= celda 1). Dos clics
+    # al mismo punto se leen como DOBLE CLIC, seleccionan el campo entero y dejan
+    # el teclado inhibido (bug medido el 27/10). No reintroducir el segundo clic.
+    await pf.step(s, "clic_celda1", "click_point",
+                  {"x": calle["field_x"] + 2, "y": calle["cy"]})
+    await asyncio.sleep(0.2)
     await pf.step(s, "derecha", "press_keys", {"keys": ["right"]})
     await pf.step(s, "izquierda", "press_keys", {"keys": ["left"]})
     await pf.step(s, "step1", "write_to_anydesk", {"command": parte1})
