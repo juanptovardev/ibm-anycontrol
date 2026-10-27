@@ -25,7 +25,7 @@ Uso:
 import asyncio
 import sys
 
-from PIL import Image, ImageChops
+from PIL import Image
 
 import preflight_auto as pf
 from _mcp import connect, need_hwnd
@@ -37,23 +37,52 @@ ANCHO = 72
 ALTO = 14
 KEY_DELAY_MS = 45  # 93 teclas -> ~8 s; mas rapido empieza a perder pulsaciones
 
-DIFF_UMBRAL = 40      # nivel de gris para considerar un pixel cambiado
-DENSIDAD_MIN = 0.30   # un bloque seleccionado cambia casi toda su area
+SEL_MIN_ANCHO = 500   # medido: el bloque de 72 columnas mide 690 px de ancho
+SEL_ROW_MIN = 300     # fila de borde: 683 px medidos en captura real
+SEL_COL_MIN = 100     # columna de borde: 309 px medidos en captura real
+SEL_MIN_ALTO = 150    # 15 filas ~320 px; 150 px = piso de 8 filas
 PASTE_MIN_DIFF = 3000  # pixeles cambiados para aceptar que el pegado ocurrio
 
 
-def bbox_cambio(a: Image.Image, b: Image.Image) -> tuple[tuple | None, float]:
-    """Caja de pixeles cambiados entre dos capturas + densidad dentro de la caja."""
-    diff = ImageChops.difference(a.convert("RGB"), b.convert("RGB")).convert("L")
-    mascara = diff.point(lambda p: 255 if p > DIFF_UMBRAL else 0)
-    caja = mascara.getbbox()
-    if not caja:
-        return None, 0.0
-    x0, y0, x1, y1 = caja
-    recorte = mascara.crop(caja)
-    pintados = sum(1 for v in recorte.getdata() if v)
-    area = max(1, (x1 - x0) * (y1 - y0))
-    return caja, pintados / area
+def _es_borde(r: int, g: int, b: int) -> bool:
+    """Color medido del borde de seleccion del 5250: amarillo apagado."""
+    return r > 150 and g > 150 and 60 < b < 170
+
+
+def sel_box(img: Image.Image) -> tuple[tuple | None, int]:
+    """Rectangulo de seleccion del 5250 medido por sus cuatro bordes.
+
+    El emulador dibuja un marco amarillo apagado. Medido sobre captura real:
+    dos filas densas (212 y 612 px de ancho) y dos columnas densas (x=244 y
+    x=934). Buscar corridas contiguas falla porque el texto rompe la linea.
+
+    El diff entre capturas tampoco sirve: el reloj de la barra inferior
+    ensancha la caja a toda la pantalla (densidad medida 0.01).
+
+    Returns:
+        (bbox, alto): bbox (x0, y0, x1, y1) o None, y alto en pixeles.
+    """
+    rgb = img.convert("RGB")
+    px = rgb.load()
+    ancho, alto = rgb.size
+    y_ini, y_fin = 140, min(alto, 635)
+
+    filas: list[int] = []
+    for y in range(y_ini, y_fin):
+        if sum(1 for x in range(ancho) if _es_borde(*px[x, y])) >= SEL_ROW_MIN:
+            filas.append(y)
+    if len(filas) < 2:
+        return None, 0
+
+    columnas: list[int] = []
+    for x in range(ancho):
+        if sum(1 for y in range(y_ini, y_fin) if _es_borde(*px[x, y])) >= SEL_COL_MIN:
+            columnas.append(x)
+    if len(columnas) < 2:
+        return None, 0
+
+    caja = (min(columnas), min(filas), max(columnas) + 1, max(filas) + 1)
+    return caja, caja[3] - caja[1]
 
 
 def texto_superior(img: Image.Image, caja: tuple) -> str:
@@ -64,7 +93,7 @@ def texto_superior(img: Image.Image, caja: tuple) -> str:
     return texto.splitlines()[0] if texto else ""
 
 
-async def _seleccionar(s, hwnd: int, antes: Image.Image, dry: bool) -> tuple:
+async def _seleccionar(s, hwnd: int, dry: bool) -> tuple:
     """7 abajo SIN shift, luego Shift + 72 derecha + 14 abajo.
 
     El shift empieza DESPUES de bajar 7: las bajadas iniciales mueven el
@@ -78,14 +107,15 @@ async def _seleccionar(s, hwnd: int, antes: Image.Image, dry: bool) -> tuple:
                   {"keys": teclas, "key_delay_ms": KEY_DELAY_MS})
     await asyncio.sleep(0.3)
     img = pf.shot(hwnd, "cp-sel" if not dry else "cp-sel-dry")
-    caja, densidad = bbox_cambio(antes, img)
-    print(f"G1 caja={caja} densidad={densidad:.2f} "
-          f"ancho={(caja[2] - caja[0]) if caja else 0} "
-          f"alto={(caja[3] - caja[1]) if caja else 0}", flush=True)
+    caja, alto_sel = sel_box(img)
+    ancho = (caja[2] - caja[0]) if caja else 0
+    print(f"G1 sel caja={caja} ancho={ancho} alto={alto_sel}", flush=True)
     if not caja:
-        raise pf.Halt("G1 no hay seleccion visible")
-    if densidad < DENSIDAD_MIN:
-        raise pf.Halt(f"G1 seleccion dispersa (densidad {densidad:.2f})")
+        raise pf.Halt("G1 no hay seleccion visible (amarillo)")
+    if ancho < SEL_MIN_ANCHO:
+        raise pf.Halt(f"G1 seleccion angosta: {ancho}px (se esperan >={SEL_MIN_ANCHO})")
+    if alto_sel < SEL_MIN_ALTO:
+        raise pf.Halt(f"G1 seleccion de {alto_sel}px de alto (se esperan >={SEL_MIN_ALTO})")
     print(f"G1 primera linea: {texto_superior(img, caja)!r}", flush=True)
     return img, caja
 
@@ -99,9 +129,13 @@ async def _pegar(s, hwnd: int) -> None:
     await pf.step(s, "alt_tab", "press_keys", {"keys": ["alt", "tab"]})
     await asyncio.sleep(1.0)
     st = clasificar(captura(hwnd)[0], usar_jev=False)
-    print(f"G2 pantalla destino: estado={st['estado']} error={st.get('error')}", flush=True)
+    no_ibm = bool((st.get("senales") or {}).get("no_ibm"))
+    print(f"G2 pantalla destino: estado={st['estado']} no_ibm={no_ibm} "
+          f"error={st.get('error')}", flush=True)
     if st["estado"] is not None:
         raise pf.Halt("G2 tras Alt+Tab sigue siendo la pantalla IBM: no se pega")
+    if not no_ibm:
+        raise pf.Halt("G2 la ventana tras Alt+Tab no parece navegador/hoja: no se pega")
     antes = pf.shot(hwnd, "cp-pre-paste")
     await pf.step(s, "ctrl_shift_v", "paste_clipboard", {"shift": True})
     await asyncio.sleep(1.2)
@@ -133,8 +167,8 @@ async def _secuencia(hwnd: int, dry: bool) -> bool:
             print(f"G0 pantalla: estado={st['estado']} conf={st.get('confianza')}", flush=True)
             if st["estado"] != "cuenta_matriz":
                 raise pf.Halt(f"G0 se esperaba el listado, hay {st['estado']}")
-            antes = pf.shot(hwnd, "cp-antes")
-            await _seleccionar(s, hwnd, antes, dry)
+            pf.shot(hwnd, "cp-antes")
+            await _seleccionar(s, hwnd, dry)
             if dry:
                 await pf.step(s, "limpiar", "press_keys", {"keys": ["escape"]})
                 print("DRY: seleccion medida, no se copio nada", flush=True)
@@ -153,7 +187,7 @@ async def _secuencia(hwnd: int, dry: bool) -> bool:
 def main(argv: list[str]) -> int:
     dry = "--dry" in argv
     args = [a for a in argv if a != "--dry"]
-    hwnd = need_hwnd([sys.argv[0]] + args)
+    hwnd = need_hwnd(args)
     ok = asyncio.run(_secuencia(hwnd, dry))
     if not ok:
         return 1
