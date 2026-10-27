@@ -6,3 +6,6 @@ evidencia/*.png
 evidencia/*.jpg
 datos/traza.jsonl
 datos/traza.md
+datos/ui.err
+datos/ui.log
+datos/control.json
