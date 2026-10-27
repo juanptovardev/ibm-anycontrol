@@ -44,3 +44,13 @@ no se borra: son las mediciones que justifican las recetas).
   `window_manager.find_viewport(raiz)`, nunca cachear.
 - `read_from_anydesk` (640 px) no sirve para coordenadas.
 - `write_to_anydesk` recibe el argumento `command`, no `text`.
+
+## 4. Traza y semaforo (que paso y cual es el siguiente paso)
+
+| Archivo | Rol |
+|---|---|
+| `traza.py` | Trace leader + policia de transito. Cada paso deja un evento en `datos/traza.jsonl` y una fila en `datos/traza.md`. El mapa `(etapa, resultado) -> accion` decide el siguiente paso; sin regla, se detiene. |
+| `pagina.py` | `volver` (Alt+Tab a IBM) y `avanza` (AvPag + clasificar). `decide` es puro: seguir / fin / abortar. |
+| `vigia.py` | Detecta el dialogo de licencia de AnyDesk y pulsa `Repetir` (ventana local, boton buscado por texto). |
+
+Detalle en `docs/engineering/TRAZA_Y_SEMAFORO.md`.
