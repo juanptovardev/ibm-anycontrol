@@ -1,5 +1,11 @@
 # Escalamiento y blindaje — matriz-ibm-agent
 
+Gobernanza completa: `docs/engineering/GUIA_ORQUESTACION_IA.md` (método ORCA) ·
+`docs/engineering/EXECUTION_BATCHES.md` (prompts congelados) ·
+`docs/engineering/ESTADO_ORQUESTACION.md` (bitácora) ·
+`docs/engineering/TRACE_FUNCIONES.md` (catálogo anti-reescritura) ·
+`docs/adr/` (decisiones) · `tools/verifications/dossier-motor-5250.md` (evidencia).
+
 Motor: `tools/loop.py` (ciclo por dirección) + `tools/estado.py` (qué pantalla es) +
 `tools/tabla.py` (qué dice el listado) + `tools/paginar.py` (AvPág) + `tools/_jev.py` (Jev).
 
