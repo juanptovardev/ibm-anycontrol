@@ -120,6 +120,50 @@ class TestReglas(unittest.TestCase):
         texto = "CONSULTA UNIDADES CUENTA MATRIZ\ncasax xt121e\ncasax nfe700\n"
         self.assertEqual(estado.reglas(texto)["senales"]["lineas_suscriptor"], 2)
 
+    def test_fin_de_libro_gana_sobre_cuenta_matriz(self):
+        # El listado sigue en pantalla, pero el 5250 avisa que no hay mas
+        # registros: se deja de extraer.
+        texto = (UNIDADES +
+                 "F12=Anterior\n"
+                 "Giro hacia arriba o hacia abajo mas alla del primer o ultimo "
+                 "registro en el archivo.")
+        r = estado.reglas(texto)
+        self.assertEqual(r["estado"], "fin_libro")
+        self.assertTrue(r["senales"]["fin"])
+
+    def test_fin_de_libro_tolera_acentos_del_ocr(self):
+        texto = UNIDADES + "Giro hacia arriba o hacia abajo más allá del último registro"
+        self.assertEqual(estado.reglas(texto)["estado"], "fin_libro")
+
+    def test_f12_anterior_solo_no_es_fin_de_libro(self):
+        # F12=Anterior puede estar en la barra de funciones sin que la matriz
+        # se haya terminado: la senal es la FRASE, no la tecla.
+        texto = UNIDADES + "F3=Fin F12=Anterior F10=Buscar Direccion\n"
+        r = estado.reglas(texto)
+        self.assertEqual(r["estado"], "cuenta_matriz")
+        self.assertFalse(r["senales"]["fin"])
+
+    def test_fin_de_libro_no_aplica_a_la_hoja(self):
+        hoja = "LIMPIEZA RR - Google Sheets\nGiro hacia arriba mas alla del ultimo registro"
+        r = estado.reglas(hoja)
+        self.assertIsNone(r["estado"])
+        self.assertTrue(r["senales"]["no_ibm"])
+
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestDesconectado(unittest.TestCase):
+    def test_dialogo_de_licencia_no_es_error_del_5250(self):
+        # Dialogo real de AnyDesk (medido): tapa la pantalla remota.
+        texto = ("Conexion finalizada\nLa conexion de red se cerro debido a la "
+                 "limitacion de la licencia\nSuscribirse... Repetir OK")
+        r = estado.reglas(texto)
+        self.assertEqual(r["estado"], "desconectado")
+        self.assertTrue(r["senales"]["desconectado"])
+
+    def test_suscribirse_solo_no_basta(self):
+        # 'Suscribirse' puede estar en la interfaz del cliente sin que la
+        # sesion se haya cortado: la senal es la frase del dialogo.
+        texto = "CONSULTA UNIDADES CUENTA MATRIZ\nSuscribirse a la version completa"
+        self.assertNotEqual(estado.reglas(texto)["estado"], "desconectado")

@@ -25,7 +25,8 @@ from _jev import ask
 sys.path.insert(0, REPO)
 from mcp_anydesk_server import window_manager as W  # noqa: E402
 
-ESTADOS = ["formulario", "cuenta_matriz", "sin_coincidencia", "error"]
+ESTADOS = ["formulario", "cuenta_matriz", "fin_libro", "desconectado",
+           "sin_coincidencia", "error"]
 # Jev con poca confianza NO es un veredicto: se deja sin clasificar para que
 # el bucle aborte (medido en vivo: una pagina web dio "formulario" con 0.35).
 UMBRAL_JEV = 0.6
@@ -33,9 +34,13 @@ INSTRUCCION_JEV = (
     "Clasifica la pantalla del sistema IBM 5250. 'formulario' es el buscador "
     "CONSULTA EDIFICIO-CUENTA MATRIZ con los campos Nombre/Calle/No.Casa vacios o "
     "llenos y sin listado. 'cuenta_matriz' es un listado de unidades con columnas "
-    "de direccion, apto y suscriptor. 'sin_coincidencia' es el mismo formulario con "
-    "un mensaje de que la calle o el edificio no existe. 'error' es cualquier aviso "
-    "que impide continuar."
+    "de direccion, apto y suscriptor. 'fin_libro' es ese mismo listado cuando "
+    "abajo aparece un aviso de que se intento pasar mas alla del primer o ultimo "
+    "registro del archivo (giro hacia arriba o hacia abajo). 'sin_coincidencia' "
+    "es el mismo formulario con un mensaje de que la calle o el edificio no "
+    "existe. 'desconectado' es el dialogo de AnyDesk avisando que la conexion "
+    "se cerro por la limitacion de la licencia. 'error' es cualquier aviso que "
+    "impide continuar."
 )
 
 RE_DURO = re.compile(
@@ -48,6 +53,25 @@ RE_NO_ENCONTRADO = re.compile(
 RE_FORM = re.compile(r"CONSULTA\s+EDIFICIO", re.IGNORECASE)
 RE_UNIDADES = re.compile(r"CONSULTA\s+UNIDADES", re.IGNORECASE)
 RE_SUSCRIPTOR = re.compile(r"\b(?:[A-Z]{2,4}\d{3,5}[A-Z]?|\d{7,9})\b", re.IGNORECASE)
+# Fin de archivo: el 5250 avisa al intentar paginar mas alla del ultimo registro.
+# Se busca la FRASE, no "F12=Anterior": esa tecla puede estar en la barra de
+# funciones sin que la matriz se haya terminado. Se compara sobre el texto
+# normalizado (sin acentos) porque el OCR devuelve "MAS ALLA" / "ULTIMO".
+RE_FIN = re.compile(
+    r"GIRO\s+HACIA\s+(?:ARRIBA|ABAJO)|"
+    r"MAS\s+ALLA\s+DEL\s+(?:PRIMER|ULTIMO)\s+REGISTRO|"
+    r"(?:PRIMER|ULTIMO)\s+REGISTRO\s+EN\s+EL\s+ARCHIVO",
+    re.IGNORECASE,
+)
+# AnyDesk corta la sesion por la licencia gratuita y dibuja su propio dialogo
+# LOCAL encima de la pantalla remota (medido: modal 'Conexion finalizada' con
+# los botones Suscribirse / Repetir / OK). No es un error del 5250: se puede
+# reconectar y seguir.
+RE_DESCONECTADO = re.compile(
+    r"CONEXION\s+FINALIZADA|LIMITACION\s+DE\s+LA\s+LICENCIA|"
+    r"NO\s+SE\s+PUEDE\s+CONECTAR",
+    re.IGNORECASE,
+)
 
 # Negativo duro: marcadores de navegador/hoja de calculo. Una hoja con la MISMA
 # tabla de direcciones y suscriptores se parece demasiado al listado 5250 (medido
@@ -98,9 +122,13 @@ def reglas(texto: str) -> dict:
     lineas_suscriptor = sum(1 for l in lineas if RE_SUSCRIPTOR.search(l))
     duro = RE_DURO.search(texto)
     faltante = RE_NO_ENCONTRADO.search(texto)
+    fin = RE_FIN.search(normaliza(texto))
+    desconectado = RE_DESCONECTADO.search(normaliza(texto))
     senales = {
         "form": bool(RE_FORM.search(texto)),
         "unidades": bool(RE_UNIDADES.search(texto)),
+        "fin": bool(fin),
+        "desconectado": bool(desconectado),
         "aviso": duro.group(0).upper() if duro else None,
         "no_encontrado": faltante.group(0).upper() if faltante else None,
         "no_ibm": bool(RE_NO_IBM.search(texto)),
@@ -113,8 +141,17 @@ def reglas(texto: str) -> dict:
     if senales["no_ibm"]:
         return {"estado": None, "fuente": "regla", "confianza": 0.0,
                 "senales": senales, "error": "pantalla no IBM (navegador/hoja)"}
+    # El corte de licencia tapa la pantalla: no hay nada que leer ni teclear.
+    if senales["desconectado"]:
+        return {"estado": "desconectado", "fuente": "regla", "confianza": 0.95,
+                "senales": senales, "error": "sesion AnyDesk cortada (licencia)"}
     if senales["aviso"]:
         return {"estado": "error", "fuente": "regla", "confianza": 1.0, "senales": senales}
+    # Fin de archivo gana sobre 'cuenta_matriz': el listado sigue en pantalla,
+    # pero ya no hay paginas que extraer.
+    if senales["fin"]:
+        return {"estado": "fin_libro", "fuente": "regla", "confianza": 0.95,
+                "senales": senales}
     if senales["unidades"]:
         return {"estado": "cuenta_matriz", "fuente": "regla", "confianza": 0.95, "senales": senales}
     if senales["no_encontrado"] and senales["form"]:

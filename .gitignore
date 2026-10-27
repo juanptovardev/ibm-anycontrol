@@ -4,3 +4,5 @@ __pycache__/
 datos/datos.csv
 evidencia/*.png
 evidencia/*.jpg
+datos/traza.jsonl
+datos/traza.md

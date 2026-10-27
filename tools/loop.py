@@ -1,4 +1,15 @@
-"""Ciclo autonomo por direccion: buscar -> verificar -> paginar -> extraer -> ledger.
+"""Ciclo autonomo por direccion: buscar -> extraer -> paginar -> ledger.
+
+Flujo real (validado en vivo, no reinterpretar):
+  1. La pantalla debe ser el formulario (B1).
+  2. Macro de busqueda: UN clic en Calle, derecha/izquierda, parte1, '+',
+     parte2, '+', F10, Shift+F4.
+  3. Si entra al listado: bloque por bloque -> `ciclo.extrae` (7 abajo,
+     Shift+Clic, Ctrl+C, Alt+Tab, Ctrl+Shift+V, desplazar).
+  4. `pagina.volver` (Alt+Tab de regreso) y `pagina.avanza` (AvPág).
+     Si sale el aviso de fin de archivo, la matriz se acabo.
+  5. Todo deja rastro en `datos/ledger.csv` (contrato congelado) y en
+     `datos/traza.jsonl` (que paso y en que punto esta el sistema).
 
 BLINDAJE (reglas duras, cada una verificable):
   B1  No se teclea a ciegas: la pantalla debe estar en 'formulario'.
@@ -10,7 +21,7 @@ BLINDAJE (reglas duras, cada una verificable):
   B6  Todo item deja rastro: una fila en el ledger + evidencia en disco.
   B7  Idempotencia: lo que ya esta 'ok' en el ledger no se vuelve a procesar.
 
-Uso: python tools/loop.py <hwnd> [id]
+Uso: python tools/loop.py <hwnd> [id] [--dry]
 """
 import asyncio
 import csv
@@ -19,11 +30,13 @@ import sys
 import time
 from pathlib import Path
 
-import paginar
+import ciclo
+import pagina
 import preflight_auto as pf
 import rows as rowdet
-import tabla
-from _mcp import call, connect, need_hwnd
+import traza
+import vigia
+from _mcp import connect, need_hwnd
 from estado import captura, clasificar
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -36,6 +49,9 @@ CAMPOS_LEDGER = ["id", "direccion_parte1", "direccion_parte2", "comuna",
                   "notas", "reintentos"]
 REINTENTOS = 1
 INK_MIN = pf.INK_MIN
+# El bloque del operador son 15 filas (7 abajo + 14 de alto).
+FILAS_POR_BLOQUE = 15
+MAX_PAGINAS = 40
 
 
 def lee_datos(ruta: Path = DATOS) -> list[dict]:
@@ -115,7 +131,33 @@ async def verifica_texto(hwnd: int) -> tuple[bool, str]:
     return True, f"Calle ok (tinta {tinta_calle})"
 
 
-async def procesa(fila: dict, hwnd: int, s) -> dict:
+def hay_dialogo(hwnd: int) -> bool:
+    """El corte de licencia de AnyDesk es una ventana LOCAL, no pixels remotos.
+
+    Medido: OCR del viewport no siempre lo ve (el modal es hermano del viewport,
+    no hijo), asi que la fuente fiable es la enumeracion de ventanas.
+    """
+    try:
+        return bool(vigia.dialogo(vigia.raiz(hwnd)))
+    except Exception:  # noqa: BLE001 - si falla la sonda, no se bloquea el flujo
+        return False
+
+
+def reconecta_si_hace_falta(hwnd: int) -> bool:
+    """Pulsa Repetir si la sesion se corto. Devuelve True si hay conexion."""
+    if not hay_dialogo(hwnd):
+        return True
+    res = vigia.reconecta(vigia.raiz(hwnd))
+    traza.evento("reconectar", "ok" if res.get("ok") else "fallo",
+                 detalle=str(res.get("boton") or res.get("motivo")))
+    print(f"RECONECTAR {res}", flush=True)
+    if not res.get("ok"):
+        return False
+    time.sleep(2.0)  # la sesion tarda en repintar la pantalla remota
+    return True
+
+
+async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
     """Un item completo. Nunca lanza: devuelve el resultado para el ledger."""
     inicio = time.time()
     id_ = fila.get("id", "")
@@ -131,9 +173,21 @@ async def procesa(fila: dict, hwnd: int, s) -> dict:
     for intento in range(REINTENTOS + 1):
         res["reintentos"] = intento
         try:
+            # B0: si AnyDesk corto la sesion, se reconecta antes de leer nada.
+            if not reconecta_si_hace_falta(hwnd):
+                res["motivo"] = "B0 sin conexion AnyDesk (dialogo de licencia)"
+                return res
+
             # B1: verificar pantalla antes de teclear.
             img, _vp = captura(hwnd)
             st = clasificar(img, usar_jev=False)
+            traza.evento("estado", st["estado"] or "desconocido",
+                         detalle=f"{id_} intento {intento} conf {st.get('confianza')}")
+            if st["estado"] == "desconectado" and reconecta_si_hace_falta(hwnd):
+                img, _vp = captura(hwnd)
+                st = clasificar(img, usar_jev=False)
+                traza.evento("estado", st["estado"] or "desconocido",
+                             detalle=f"{id_} tras reconectar")
             if st["estado"] != "formulario":
                 res["motivo"] = f"B1 pantalla {st['estado']}"
                 return res
@@ -149,6 +203,7 @@ async def procesa(fila: dict, hwnd: int, s) -> dict:
             ok, detalle = await verifica_texto(hwnd)
             if not ok:
                 res["motivo"] = f"B2 {detalle}"
+                traza.evento("buscar", "fallo", detalle=f"{id_} {detalle}")
                 if intento < REINTENTOS:
                     await pf.step(s, "esc", "press_keys", {"keys": ["escape"]})
                     continue
@@ -158,30 +213,53 @@ async def procesa(fila: dict, hwnd: int, s) -> dict:
             await asyncio.sleep(0.8)
 
             # B3/B4: esperar el resultado de la busqueda.
-            st = await espera_estado(hwnd, {"cuenta_matriz", "sin_coincidencia", "error"})
+            st = await espera_estado(hwnd, {"cuenta_matriz", "sin_coincidencia",
+                                            "error", "fin_libro"})
             if st["estado"] == "sin_coincidencia":
+                traza.evento("buscar", "sin_coincidencia", detalle=id_)
                 res.update(estado="no_encontrado", notas="sin coincidencia")
                 return res
             if st["estado"] != "cuenta_matriz":
+                traza.evento("buscar", "fallo", detalle=f"{id_} estado {st['estado']}")
                 res["notas"] = f"B3 estado {st['estado']}"
                 return res
+            traza.evento("buscar", "ok", detalle=f"{id_} {parte1} {parte2}")
 
-            # Paginacion + extraccion.
-            pag = await paginar.recorre(hwnd, paginar.MAX_PAGINAS, s)
-            res["paginas_vistas"] = pag["paginas"]
-            if not pag["ok"]:
-                res["notas"] = f"paginacion: {pag['motivo']}"
+            # Bloque por bloque hasta el aviso de fin de archivo.
+            bloques = 0
+            for n in range(1, MAX_PAGINAS + 1):
+                if not reconecta_si_hace_falta(hwnd):
+                    raise pf.Halt(f"bloque {n}: sin conexion AnyDesk")
+                await ciclo.extrae(s, hwnd, dry)
+                bloques += 1
+                traza.evento("extraer", "ok", detalle=f"{id_} bloque {n}")
+                if dry:
+                    break
+                await pagina.volver(s, hwnd)
+                traza.evento("volver", "ok", detalle=f"{id_} bloque {n}")
+                stp = await pagina.avanza(s, hwnd)
+                decision = pagina.decide(
+                    stp["estado"], bool((stp.get("senales") or {}).get("no_ibm")))
+                traza.evento("pagina", stp["estado"] or "desconocido",
+                             detalle=f"{id_} pagina {n} decision {decision}")
+                if decision == "fin":
+                    break
+                if decision != "seguir":
+                    res["notas"] = f"pagina {n}: estado {stp['estado']}"
+                    return res
+            else:
+                res["notas"] = f"tope de {MAX_PAGINAS} paginas alcanzado"
                 return res
 
-            extraido = tabla.extrae(hwnd)
-            filas = extraido["filas"]
-            res["filas_copiadas"] = len(filas)
-            res["estado"] = "ok" if filas else "sin_suscriptores"
-            res["notas"] = f"{len(filas)} filas"
-            res["evidencia"] = str(pf.shot(hwnd, f"{id_}-unidades") or "")
+            res["paginas_vistas"] = bloques
+            res["filas_copiadas"] = bloques * FILAS_POR_BLOQUE
+            res["estado"] = "ok"
+            res["notas"] = f"{bloques} bloques x {FILAS_POR_BLOQUE} filas"
+            res["evidencia"] = str(pf.shot(hwnd, f"{id_}-fin") or "")
             return res
         except pf.Halt as exc:
             res["notas"] = f"halt: {exc}"
+            traza.evento("extraer", "fallo", detalle=f"{id_} {exc}")
             return res
         except Exception as exc:  # noqa: BLE001 - un item nunca tumba la tanda
             res["notas"] = f"{type(exc).__name__}: {exc}"
@@ -190,7 +268,7 @@ async def procesa(fila: dict, hwnd: int, s) -> dict:
     return res
 
 
-async def main(hwnd: int, solo_id: str | None) -> int:
+async def main(hwnd: int, solo_id: str | None, dry: bool = False) -> int:
     filas = lee_datos()
     if solo_id:
         filas = [f for f in filas if f.get("id") == solo_id]
@@ -206,14 +284,20 @@ async def main(hwnd: int, solo_id: str | None) -> int:
     async with connect() as s:
         await pf.step(s, "focus_click_off", "set_focus_click_mode", {"enabled": False})
         await pf.step(s, "pin", "select_anydesk_window", {"hwnd": hwnd})
+        traza.evento("pin", "ok", detalle=f"hwnd {hwnd}")
         for f in pendientes:
-            res = await procesa(f, hwnd, s)
+            res = await procesa(f, hwnd, s, dry)
             res["hora_fin"] = time.strftime("%H:%M:%S")
-            ledger_escribe(res)
+            if not dry:
+                ledger_escribe(res)
+            traza.evento("registrar", "ok" if res["estado"] == "ok" else "fallo",
+                         detalle=f"{res['id']} {res['estado']}")
             print(json.dumps(res, ensure_ascii=False), flush=True)
     return 0
 
 
 if __name__ == "__main__":
-    solo = sys.argv[2] if len(sys.argv) > 2 else None
-    sys.exit(asyncio.run(main(need_hwnd(sys.argv), solo)))
+    argv = [a for a in sys.argv if a != "--dry"]
+    solo = argv[2] if len(argv) > 2 else None
+    sys.exit(asyncio.run(main(need_hwnd(argv), solo, dry="--dry" in sys.argv)))
+

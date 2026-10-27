@@ -26,7 +26,7 @@ import preflight_auto as pf
 from click_sel import _words, target_celda
 
 
-async def _ciclo(s, hwnd: int, dry: bool) -> None:
+async def extrae(s, hwnd: int, dry: bool = False) -> None:
     await pf.step(s, "bajar_inicio", "press_keys",
                   {"keys": ["down"] * cp.BAJAR_INICIO, "key_delay_ms": cp.KEY_DELAY_MS})
     img = pf.shot(hwnd, "ciclo-antes")
@@ -61,7 +61,7 @@ async def _run(hwnd: int, dry: bool) -> bool:
             print(f"G0 pantalla: estado={st['estado']} conf={st.get('confianza')}", flush=True)
             if st["estado"] != "cuenta_matriz":
                 raise pf.Halt(f"G0 se esperaba el listado, hay {st['estado']}")
-            await _ciclo(s, hwnd, dry)
+            await extrae(s, hwnd, dry)
         except pf.Halt as exc:
             print(f"ABORTADO: {exc}", flush=True)
             return False
