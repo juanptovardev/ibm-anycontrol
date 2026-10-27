@@ -49,6 +49,20 @@ RE_FORM = re.compile(r"CONSULTA\s+EDIFICIO", re.IGNORECASE)
 RE_UNIDADES = re.compile(r"CONSULTA\s+UNIDADES", re.IGNORECASE)
 RE_SUSCRIPTOR = re.compile(r"\b(?:[A-Z]{2,4}\d{3,5}[A-Z]?|\d{7,9})\b", re.IGNORECASE)
 
+# Negativo duro: marcadores de navegador/hoja de calculo. Una hoja con la MISMA
+# tabla de direcciones y suscriptores se parece demasiado al listado 5250 (medido
+# en vivo: Jev la clasifico 'cuenta_matriz' con 0.83 y habria tecleado encima).
+RE_NO_IBM = re.compile(
+    r"GOOGLE\s+SHEETS|ASK\s+GEMINI|LIMPIEZA\s+RR|CHROME|FIREFOX|"
+    r"HTTPS?://|WWW\.",
+    re.IGNORECASE,
+)
+# Positivo minimo: sin un marcador real del 5250 no se acepta veredicto de Jev.
+RE_IBM = re.compile(
+    r"CUENTA\s+EDIFICIO|CONSULTA\s+(?:EDIFICIO|UNIDADES)|F(?:3|5|6|8|10|13|14|16)\s*=",
+    re.IGNORECASE,
+)
+
 
 def normaliza(text: str) -> str:
     """Mayusculas, sin acentos, espacios colapsados: comparaciones estables."""
@@ -89,9 +103,16 @@ def reglas(texto: str) -> dict:
         "unidades": bool(RE_UNIDADES.search(texto)),
         "aviso": duro.group(0).upper() if duro else None,
         "no_encontrado": faltante.group(0).upper() if faltante else None,
+        "no_ibm": bool(RE_NO_IBM.search(texto)),
+        "ibm": bool(RE_IBM.search(texto)),
         "lineas": len(lineas),
         "lineas_suscriptor": lineas_suscriptor,
     }
+    # Una hoja de calculo con la misma tabla no es el listado del 5250: si hay
+    # marcadores de navegador, no se clasifica (None = no teclear).
+    if senales["no_ibm"]:
+        return {"estado": None, "fuente": "regla", "confianza": 0.0,
+                "senales": senales, "error": "pantalla no IBM (navegador/hoja)"}
     if senales["aviso"]:
         return {"estado": "error", "fuente": "regla", "confianza": 1.0, "senales": senales}
     if senales["unidades"]:
@@ -113,7 +134,9 @@ def clasificar(img: Image.Image, usar_jev: bool = True) -> dict:
         "confianza": base["confianza"],
         "senales": base["senales"],
     }
-    if resultado["estado"] is None and usar_jev:
+    if base.get("error"):
+        resultado["error"] = base["error"]
+    if resultado["estado"] is None and usar_jev and not base["senales"]["no_ibm"]:
         recorte = "\n".join(l for l in texto.splitlines() if l.strip())[:2000]
         decision = ask(recorte or "(pantalla vacia)", INSTRUCCION_JEV, ESTADOS)
         if decision.get("ok"):
@@ -121,6 +144,11 @@ def clasificar(img: Image.Image, usar_jev: bool = True) -> dict:
             if confianza < UMBRAL_JEV:
                 resultado.update(estado=None, fuente="jev", confianza=confianza,
                                  error=f"jev con confianza baja ({confianza})")
+            elif not base["senales"]["ibm"]:
+                # Un veredicto alto sobre una pantalla sin marcadores del 5250 es
+                # exactamente el caso de la hoja de calculo: no se acepta.
+                resultado.update(estado=None, fuente="jev", confianza=confianza,
+                                 error="jev sin marcadores IBM en pantalla")
             else:
                 resultado.update(
                     estado=decision["choice"],

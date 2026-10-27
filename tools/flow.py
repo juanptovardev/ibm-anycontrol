@@ -1,7 +1,11 @@
 """Ciclo normal, sin capturas ni preflight:
-clic en celda 1 de Calle -> derecha -> izquierda -> step1 -> '+' -> step2 -> '+' -> F10 -> Shift+F4.
+UN clic en celda 1 de Calle -> derecha -> izquierda -> step1 -> '+' -> step2 -> '+' -> F10 -> Shift+F4.
 
 Uso: python tools/flow.py <hwnd>
+
+Un solo clic a proposito: el doble clic selecciona TODO el campo (barra cyan) en
+vez de dejar el cursor en la celda 1, y entonces las flechas y la escritura no
+arrancan donde deben. Para el ciclo con medicion usar paso1.py + paso2.py.
 """
 import asyncio
 import sys
@@ -20,13 +24,9 @@ async def main(hwnd: int) -> int:
         await pf.step(s, "pin", "select_anydesk_window", {"hwnd": hwnd})
         _, _, det = rowdet.detect(hwnd)
         calle = det[1]
-        punto = {"x": calle["field_x"] + 4, "y": calle["cy"]}
-        # El primer clic puede consumirse activando la ventana de AnyDesk:
-        # se manda dos veces al mismo punto para garantizar que llegue al remoto.
+        punto = {"x": calle["field_x"] + 2, "y": calle["cy"]}
         await pf.step(s, "clic_celda1", "click_point", punto)
-        await asyncio.sleep(0.25)
-        await pf.step(s, "clic_celda1b", "click_point", punto)
-        await asyncio.sleep(0.25)
+        await asyncio.sleep(0.2)
         await pf.step(s, "derecha", "press_keys", {"keys": ["right"]})
         await pf.step(s, "izquierda", "press_keys", {"keys": ["left"]})
         await pf.step(s, "step1", "write_to_anydesk", {"command": PARTE1})

@@ -79,12 +79,42 @@ class TestReglas(unittest.TestCase):
         from unittest.mock import patch
         from PIL import Image
 
-        with patch.object(estado, "ask", return_value={
-                "ok": True, "choice": "cuenta_matriz", "confidence": 0.9,
-                "probabilities": {"cuenta_matriz": 0.9}}):
+        # Pantalla con marcadores del 5250 (sin cabecera CONSULTA): la regla no
+        # decide, Jev si, y el veredicto se acepta porque hay marcador real.
+        with patch.object(estado, "ocr_text", return_value="Cuenta Edificio : 34377 F10=Buscar Direccion"), \
+                patch.object(estado, "ask", return_value={
+                    "ok": True, "choice": "cuenta_matriz", "confidence": 0.9,
+                    "probabilities": {"cuenta_matriz": 0.9}}):
             r = estado.clasificar(Image.new("RGB", (40, 20), "black"), usar_jev=True)
         self.assertEqual(r["estado"], "cuenta_matriz")
         self.assertEqual(r["confianza"], 0.9)
+
+    def test_hoja_de_calculo_no_es_cuenta_matriz(self):
+        # Medido en vivo: la hoja LIMPIEZA RR (misma tabla de direcciones y
+        # suscriptores) hizo que Jev dijera 'cuenta_matriz' con 0.83. Es el
+        # DESTINO del pegado, no el listado del IBM: no se clasifica.
+        hoja = (
+            "LIMPIEZA RR - Google Sheets  Ask Gemini\n"
+            "DIRECCION EDIFICIO DIRECCION SUSCRIPTOR\n"
+            "CL 175 BLACACIAS 178-10 CASA1 BOG TVC XT121E 50867551\n"
+            "CL 175 BLACACIAS 178-10 CASA2 BOG TVC XT121E 25420919\n"
+        )
+        r = estado.reglas(hoja)
+        self.assertIsNone(r["estado"])
+        self.assertTrue(r["senales"]["no_ibm"])
+        self.assertIn("no IBM", r["error"])
+
+    def test_jev_no_clasifica_sin_marcadores_ibm(self):
+        from unittest.mock import patch
+        from PIL import Image
+
+        with patch.object(estado, "ocr_text", return_value="tabla de direcciones y suscriptores"), \
+                patch.object(estado, "ask", return_value={
+                    "ok": True, "choice": "cuenta_matriz", "confidence": 0.9,
+                    "probabilities": {"cuenta_matriz": 0.9}}):
+            r = estado.clasificar(Image.new("RGB", (40, 20), "black"), usar_jev=True)
+        self.assertIsNone(r["estado"])
+        self.assertIn("sin marcadores IBM", r["error"])
 
     def test_codigos_en_minusculas_siguen_contando(self):
         texto = "CONSULTA UNIDADES CUENTA MATRIZ\ncasax xt121e\ncasax nfe700\n"
