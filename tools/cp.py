@@ -6,7 +6,7 @@ FLUJO DEL OPERADOR (congelado, no reinterpretar):
      caracteres (Direccion .. Suscriptor) por 15 filas.
   3. Se suelta Shift. Ctrl+C.
   4. Alt+Tab a la hoja. Ctrl+Shift+V (pegar sin formato).
-  5. Ctrl+Shift+Abajo y luego un Abajo -> celda lista para el siguiente pegado.
+  5. Ctrl+Abajo y luego un Abajo -> celda lista para el siguiente pegado.
 
 El bloque copiado no se puede leer desde aqui: el portapapeles vive en la
 maquina REMOTA. La unica prueba de que el pegado ocurrio es la diferencia de
@@ -153,7 +153,7 @@ async def _pegar(s, hwnd: int) -> None:
 
 
 async def _posicionar(s, hwnd: int) -> None:
-    await pf.step(s, "ctrl_shift_down", "press_keys", {"keys": ["ctrl", "shift", "down"]})
+    await pf.step(s, "ctrl_down", "press_keys", {"keys": ["ctrl", "down"]})
     await pf.step(s, "abajo", "press_keys", {"keys": ["down"]})
     pf.shot(hwnd, "cp-listo")
 

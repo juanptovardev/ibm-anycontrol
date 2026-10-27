@@ -16,7 +16,7 @@ se pega en la hoja de limpieza.
 | 6 | `Ctrl+C` | copia al portapapeles remoto |
 | 7 | `Alt+Tab` | pasa a la hoja de limpieza |
 | 8 | `Ctrl+Shift+V` | pega sin formato |
-| 9 | `Ctrl+Shift+Abajo` | selecciona hasta el final de la columna |
+| 9 | `Ctrl+Abajo` | selecciona hasta el final de la columna |
 | 10 | 1 × `Abajo` | deja la celda lista para el siguiente pegado |
 
 Todo va en **una sola sesión MCP** (pin + override de foco son por proceso).
@@ -80,7 +80,7 @@ sustituir la selección por un gesto de ratón:
 
 ```text
 7xAbajo -> Shift abajo -> CLIC en la ultima celda (ultima fila, columna Suscript)
-        -> Shift arriba -> Ctrl+C -> Alt+Tab -> Ctrl+Shift+V -> Ctrl+Shift+Abajo -> Abajo
+        -> Shift arriba -> Ctrl+C -> Alt+Tab -> Ctrl+Shift+V -> Ctrl+Abajo -> Abajo
 ```
 
 El emulador extiende la selección desde el cursor hasta la celda clicada, así
