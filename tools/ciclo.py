@@ -26,9 +26,16 @@ import preflight_auto as pf
 from click_sel import _words, target_celda
 
 
-async def extrae(s, hwnd: int, dry: bool = False) -> None:
-    await pf.step(s, "bajar_inicio", "press_keys",
-                  {"keys": ["down"] * cp.BAJAR_INICIO, "key_delay_ms": cp.KEY_DELAY_MS})
+async def extrae(s, hwnd: int, dry: bool = False, bajar: bool = True) -> None:
+    """Extrae un bloque. bajar=False en paginas siguientes: el cursor del 5250
+    conserva su punto al paginar, asi que repetir las 7 bajadas desalinea la
+    seleccion (regla del operador, 27/10)."""
+    if bajar:
+        await pf.step(s, "bajar_inicio", "press_keys",
+                      {"keys": ["down"] * cp.BAJAR_INICIO, "key_delay_ms": cp.KEY_DELAY_MS})
+    else:
+        print("A0 pagina siguiente: sin 7 bajadas (el cursor ya esta en su punto)",
+              flush=True)
     img = pf.shot(hwnd, "ciclo-antes")
     t = target_celda(_words(img))
     if not t:

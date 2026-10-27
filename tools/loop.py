@@ -49,6 +49,10 @@ CAMPOS_LEDGER = ["id", "direccion_parte1", "direccion_parte2", "comuna",
                   "notas", "reintentos"]
 REINTENTOS = 1
 INK_MIN = pf.INK_MIN
+# Indices de fila del formulario CONSULTA EDIFICIO (rows.detect devuelve 8).
+NOMBRE = 0
+CALLE = 1
+CASA = 2
 # El bloque del operador son 15 filas (7 abajo + 14 de alto).
 FILAS_POR_BLOQUE = 15
 MAX_PAGINAS = 40
@@ -122,8 +126,8 @@ async def verifica_texto(hwnd: int) -> tuple[bool, str]:
     img, _vp, det = rowdet.detect(hwnd)
     if len(det) < 3:
         return False, "no se detectaron filas del formulario"
-    tinta_calle = pf.ink(img, det[1])
-    tinta_nombre = pf.ink(img, det[0])
+    tinta_calle = pf.ink(img, det[CALLE])
+    tinta_nombre = pf.ink(img, det[NOMBRE])
     if tinta_nombre > INK_MIN:
         return False, f"el texto quedo en Nombre (tinta {tinta_nombre})"
     if tinta_calle < INK_MIN:
@@ -212,9 +216,21 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
             await pf.step(s, "f10", "press_keys", {"keys": ["f10"]})
             await asyncio.sleep(0.8)
 
-            # B3/B4: esperar el resultado de la busqueda.
-            st = await espera_estado(hwnd, {"cuenta_matriz", "sin_coincidencia",
-                                            "error", "fin_libro"})
+            # B3/B4: F10 lleva a la FICHA del edificio, no al listado. El listado
+            # de unidades (con la columna Suscript) entra con Shift+F4 = F16.
+            # Medido en vivo: sin este paso el bucle se quedaba en 'formulario'.
+            st = await espera_estado(hwnd, {"ficha", "cuenta_matriz",
+                                            "sin_coincidencia", "error",
+                                            "fin_libro"})
+            traza.evento("estado", st["estado"] or "desconocido",
+                         detalle=f"{id_} tras F10 conf {st.get('confianza')}")
+            if st["estado"] == "ficha":
+                await pf.step(s, "shift_f4", "press_keys",
+                              {"keys": ["shift", "f4"]})
+                await asyncio.sleep(0.9)
+                st = await espera_estado(hwnd, {"cuenta_matriz",
+                                                "sin_coincidencia", "error",
+                                                "fin_libro"})
             if st["estado"] == "sin_coincidencia":
                 traza.evento("buscar", "sin_coincidencia", detalle=id_)
                 res.update(estado="no_encontrado", notas="sin coincidencia")
@@ -230,7 +246,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
             for n in range(1, MAX_PAGINAS + 1):
                 if not reconecta_si_hace_falta(hwnd):
                     raise pf.Halt(f"bloque {n}: sin conexion AnyDesk")
-                await ciclo.extrae(s, hwnd, dry)
+                await ciclo.extrae(s, hwnd, dry, bajar=(n == 1))
                 bloques += 1
                 traza.evento("extraer", "ok", detalle=f"{id_} bloque {n}")
                 if dry:
@@ -255,7 +271,8 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
             res["filas_copiadas"] = bloques * FILAS_POR_BLOQUE
             res["estado"] = "ok"
             res["notas"] = f"{bloques} bloques x {FILAS_POR_BLOQUE} filas"
-            res["evidencia"] = str(pf.shot(hwnd, f"{id_}-fin") or "")
+            img_fin, _vp_fin = captura(hwnd)
+            res["evidencia"] = str(native_shot.save(img_fin, f"{id_}-fin"))
             return res
         except pf.Halt as exc:
             res["notas"] = f"halt: {exc}"

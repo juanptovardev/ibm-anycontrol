@@ -25,7 +25,7 @@ from _jev import ask
 sys.path.insert(0, REPO)
 from mcp_anydesk_server import window_manager as W  # noqa: E402
 
-ESTADOS = ["formulario", "cuenta_matriz", "fin_libro", "desconectado",
+ESTADOS = ["formulario", "ficha", "cuenta_matriz", "fin_libro", "desconectado",
            "sin_coincidencia", "error"]
 # Jev con poca confianza NO es un veredicto: se deja sin clasificar para que
 # el bucle aborte (medido en vivo: una pagina web dio "formulario" con 0.35).
@@ -52,6 +52,14 @@ RE_NO_ENCONTRADO = re.compile(
 )
 RE_FORM = re.compile(r"CONSULTA\s+EDIFICIO", re.IGNORECASE)
 RE_UNIDADES = re.compile(r"CONSULTA\s+UNIDADES", re.IGNORECASE)
+# Ficha del edificio: pantalla intermedia entre el formulario y el listado.
+# Comparte cabecera con el formulario ("CONSULTA EDIFICIO-CUENTA MATRIZ"), asi
+# que se detecta por su contenido propio. Medido en vivo tras F10: trae
+# "Otras Direcciones", "MULTI-EDIFICIO", "Total Unidades VT/RR" y la renta.
+RE_FICHA = re.compile(
+    r"OTRAS\s+DIRECCIONES|TOTAL\s+UNIDADES|MULTI-?EDIFICIO|ULTIMO\s+TRABAJO",
+    re.IGNORECASE,
+)
 RE_SUSCRIPTOR = re.compile(r"\b(?:[A-Z]{2,4}\d{3,5}[A-Z]?|\d{7,9})\b", re.IGNORECASE)
 # Fin de archivo: el 5250 avisa al intentar paginar mas alla del ultimo registro.
 # Se busca la FRASE, no "F12=Anterior": esa tecla puede estar en la barra de
@@ -126,6 +134,7 @@ def reglas(texto: str) -> dict:
     desconectado = RE_DESCONECTADO.search(normaliza(texto))
     senales = {
         "form": bool(RE_FORM.search(texto)),
+        "ficha": bool(RE_FICHA.search(texto)),
         "unidades": bool(RE_UNIDADES.search(texto)),
         "fin": bool(fin),
         "desconectado": bool(desconectado),
@@ -154,6 +163,11 @@ def reglas(texto: str) -> dict:
                 "senales": senales}
     if senales["unidades"]:
         return {"estado": "cuenta_matriz", "fuente": "regla", "confianza": 0.95, "senales": senales}
+    # Ficha del edificio: se llega con F10 y todavia NO hay suscriptores; el
+    # listado aparece con Shift+F4. Va antes de 'formulario' porque comparte
+    # la cabecera CONSULTA EDIFICIO-CUENTA MATRIZ.
+    if senales["ficha"]:
+        return {"estado": "ficha", "fuente": "regla", "confianza": 0.95, "senales": senales}
     if senales["no_encontrado"] and senales["form"]:
         return {"estado": "sin_coincidencia", "fuente": "regla", "confianza": 0.9, "senales": senales}
     if senales["form"]:
