@@ -74,17 +74,22 @@ async def step(s, label, name, args=None):
     return res
 
 
-async def place(s, row):
-    """Clic 2 caracteres dentro del campo, seat der/izq y home a columna 0.
+async def place(s, row, dy=0, home=True, x_off=20):
+    """Clic dentro del campo, seat der/izq y opcionalmente home a columna 0.
 
     Orden mandado por el operador: primero FLECHA DERECHA y luego IZQUIERDA.
     Al reves, con el cursor en la columna 0, la izquierda salta al campo
     anterior (Nombre) y el texto acaba en la fila equivocada.
+
+    `dy` corrige el clic cuando la fila medida queda por encima del campo real
+    (el operador lo ve en el resaltado). `home=False` usa el patron validado de
+    paso1: clic + derecha + izquierda, sin home.
     """
     await step(s, "click", "click_point",
-               {"x": row["field_x"] + 20, "y": row["cy"]})
+               {"x": row["field_x"] + x_off, "y": row["cy"] + dy})
     await step(s, "seat", "press_keys", {"keys": ["right", "left"]})
-    await step(s, "home", "press_keys", {"keys": ["home"]})
+    if home:
+        await step(s, "home", "press_keys", {"keys": ["home"]})
 
 
 async def keys(s, label, names):

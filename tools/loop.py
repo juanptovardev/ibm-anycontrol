@@ -136,6 +136,12 @@ async def buscar(s, hwnd: int, det: list, parte1: str, parte2: str) -> None:
     await pf.step(s, "plus1", "press_keys", {"keys": ["add"]})
     await pf.step(s, "step2", "write_to_anydesk", {"command": parte2})
     await pf.step(s, "plus2", "press_keys", {"keys": ["add"]})
+    # Prellenado del bloque, validado en vivo el 27/10: tras el "+" el cursor
+    # cae en Comunidad (BOG) y su "+" hace el ultimo salto a Division (TVC).
+    # Sin esto F10 busca con Comunidad/Division vacias y no encuentra nada.
+    await pf.step(s, "bog", "write_to_anydesk", {"command": "BOG"})
+    await pf.step(s, "plus3", "press_keys", {"keys": ["add"]})
+    await pf.step(s, "tvc", "write_to_anydesk", {"command": "TVC"})
 
 
 async def verifica_texto(hwnd: int) -> tuple[bool, str]:
@@ -178,6 +184,25 @@ def reconecta_si_hace_falta(hwnd: int) -> bool:
     return True
 
 
+async def entrar_formulario(s, hwnd: int) -> bool:
+    """Desde el Menu Principal SCABLE al formulario: 1 + ENTER.
+
+    Solo navega cuando la pantalla no se reconoce (menu principal). Si ya hay un
+    estado claro (formulario, listado, ficha) no toca nada.
+    """
+    img, _ = captura(hwnd)
+    r = clasificar(img, usar_jev=False)
+    if r.get("estado") == "formulario":
+        return True
+    if r.get("estado") is not None:
+        return False
+    await pf.step(s, "menu_1", "write_to_anydesk", {"command": "1"})
+    await pf.step(s, "menu_enter", "press_enter", None)
+    await asyncio.sleep(0.9)
+    img, _ = captura(hwnd)
+    return clasificar(img, usar_jev=False).get("estado") == "formulario"
+
+
 async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
     """Un item completo. Nunca lanza: devuelve el resultado para el ledger."""
     inicio = time.time()
@@ -200,6 +225,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
                 return res
 
             # B1: verificar pantalla antes de teclear.
+            await entrar_formulario(s, hwnd)
             img, _vp = captura(hwnd)
             st = clasificar(img, usar_jev=False)
             traza.evento("estado", st["estado"] or "desconocido",
