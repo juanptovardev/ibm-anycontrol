@@ -56,6 +56,23 @@ CASA = 2
 # El bloque del operador son 15 filas (7 abajo + 14 de alto).
 FILAS_POR_BLOQUE = 15
 MAX_PAGINAS = 40
+CTRL = Path(__file__).resolve().parent.parent / "datos" / "control.json"
+
+
+def control() -> str:
+    """Accion pedida desde el panel (pausar / reanudar / detener)."""
+    try:
+        return json.loads(CTRL.read_text(encoding="utf-8")).get("accion", "libre")
+    except (OSError, ValueError):
+        return "libre"
+
+
+def obedece() -> str:
+    """Espera mientras este pausado; devuelve 'detener' si hay que cortar."""
+    while control() == "pausar":
+        time.sleep(1.0)
+    return control()
+
 
 
 def lee_datos(ruta: Path = DATOS) -> list[dict]:
@@ -244,6 +261,9 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
             # Bloque por bloque hasta el aviso de fin de archivo.
             bloques = 0
             for n in range(1, MAX_PAGINAS + 1):
+                if obedece() == "detener":
+                    res["notas"] = f"detenido por el panel en el bloque {n}"
+                    return res
                 if not reconecta_si_hace_falta(hwnd):
                     raise pf.Halt(f"bloque {n}: sin conexion AnyDesk")
                 await ciclo.extrae(s, hwnd, dry, bajar=(n == 1))
