@@ -26,6 +26,9 @@ sys.path.insert(0, REPO)
 from mcp_anydesk_server import window_manager as W  # noqa: E402
 
 ESTADOS = ["formulario", "cuenta_matriz", "sin_coincidencia", "error"]
+# Jev con poca confianza NO es un veredicto: se deja sin clasificar para que
+# el bucle aborte (medido en vivo: una pagina web dio "formulario" con 0.35).
+UMBRAL_JEV = 0.6
 INSTRUCCION_JEV = (
     "Clasifica la pantalla del sistema IBM 5250. 'formulario' es el buscador "
     "CONSULTA EDIFICIO-CUENTA MATRIZ con los campos Nombre/Calle/No.Casa vacios o "
@@ -114,12 +117,17 @@ def clasificar(img: Image.Image, usar_jev: bool = True) -> dict:
         recorte = "\n".join(l for l in texto.splitlines() if l.strip())[:2000]
         decision = ask(recorte or "(pantalla vacia)", INSTRUCCION_JEV, ESTADOS)
         if decision.get("ok"):
-            resultado.update(
-                estado=decision["choice"],
-                fuente="jev",
-                confianza=decision.get("confidence") or 0.0,
-                probabilidades=decision.get("probabilities"),
-            )
+            confianza = decision.get("confidence") or 0.0
+            if confianza < UMBRAL_JEV:
+                resultado.update(estado=None, fuente="jev", confianza=confianza,
+                                 error=f"jev con confianza baja ({confianza})")
+            else:
+                resultado.update(
+                    estado=decision["choice"],
+                    fuente="jev",
+                    confianza=confianza,
+                    probabilidades=decision.get("probabilities"),
+                )
         else:
             # Fallo de red/clave no es "la pantalla dice error": queda sin
             # clasificar para que el bucle decida (pausar, no seguir a ciegas).

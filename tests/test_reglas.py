@@ -61,6 +61,31 @@ class TestReglas(unittest.TestCase):
         self.assertEqual(senales["lineas_suscriptor"], 0)
         self.assertFalse(senales["lineas_suscriptor"] >= 2)
 
+    def test_jev_con_confianza_baja_no_clasifica(self):
+        # Una pagina web dio "formulario" con 0.35: con ese veredicto se
+        # teclearia en el navegador. Confianza baja = sin clasificar.
+        from unittest.mock import patch
+        from PIL import Image
+
+        with patch.object(estado, "ask", return_value={
+                "ok": True, "choice": "formulario", "confidence": 0.35,
+                "probabilities": {"formulario": 0.51, "error": 0.45}}):
+            r = estado.clasificar(Image.new("RGB", (40, 20), "black"), usar_jev=True)
+        self.assertIsNone(r["estado"])
+        self.assertEqual(r["fuente"], "jev")
+        self.assertIn("confianza baja", r["error"])
+
+    def test_jev_con_confianza_alta_si_clasifica(self):
+        from unittest.mock import patch
+        from PIL import Image
+
+        with patch.object(estado, "ask", return_value={
+                "ok": True, "choice": "cuenta_matriz", "confidence": 0.9,
+                "probabilities": {"cuenta_matriz": 0.9}}):
+            r = estado.clasificar(Image.new("RGB", (40, 20), "black"), usar_jev=True)
+        self.assertEqual(r["estado"], "cuenta_matriz")
+        self.assertEqual(r["confianza"], 0.9)
+
     def test_codigos_en_minusculas_siguen_contando(self):
         texto = "CONSULTA UNIDADES CUENTA MATRIZ\ncasax xt121e\ncasax nfe700\n"
         self.assertEqual(estado.reglas(texto)["senales"]["lineas_suscriptor"], 2)
