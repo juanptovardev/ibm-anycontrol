@@ -286,16 +286,13 @@ async def entrar_formulario(s, hwnd: int) -> bool:
     if r.get("estado") == "formulario":
         return True
     # Si quedo en el listado o en la ficha (arranque tras un corte, o el
-    # operador dejo la pantalla ahi), F3 vuelve al formulario. Sin esto la
-    # primera direccion fallaba con 'B1 pantalla cuenta_matriz'.
+    # operador dejo la pantalla ahi) hay que salir por la ruta que funciona:
+    # F3 NO sale de CONSULTA UNIDADES (su barra solo tiene F12=Anterior) y con
+    # el teclado inhibido ('A X II') se ignora. La ruta es Escape + F12 + F12
+    # (listado -> ficha -> formulario). Sin esto la segunda direccion fallaba
+    # con 'B1 pantalla cuenta_matriz' (medido 28/10).
     if r.get("estado") in ("cuenta_matriz", "ficha"):
-        for _ in range(3):
-            await pf.step(s, "f3_al_form", "press_keys", {"keys": ["f3"]})
-            await asyncio.sleep(0.9)
-            img, _ = captura(hwnd)
-            if clasificar(img, usar_jev=False).get("estado") == "formulario":
-                return True
-        return False
+        return await volver_formulario(s, hwnd)
     if r.get("estado") is not None:
         return False
     for _ in range(2):
@@ -409,6 +406,12 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
                 ficha = ""
                 print(f"  aviso: sin ficha ({exc})", flush=True)
 
+            # La ficha se guarda YA en la columna C del CSV: si la extraccion
+            # falla despues (halt, corte de AnyDesk, tope de paginas) el dato
+            # del edificio no se pierde. Orden del operador (28/10).
+            if not dry:
+                escribe_ficha(id_, ficha or "")
+
             # Bloque por bloque hasta el aviso de fin de archivo.
             bloques = 0
             saltadas = 0
@@ -477,8 +480,9 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
             res["evidencia"] = str(native_shot.save(img_fin, f"{id_}-fin"))
             res["ficha"] = ficha or ""
             if not dry:
-                escribe_ficha(id_, res["ficha"])
                 await volver_formulario(s, hwnd)
+            # En dry no se vuelve aqui: lo hace main() con entrar_formulario(),
+            # que cubre tambien los caminos de halt y error.
             return res
         except pf.Halt as exc:
             res["notas"] = f"halt: {exc}"
@@ -516,6 +520,10 @@ async def main(hwnd: int, solo_id: str | None, dry: bool = False) -> int:
             traza.evento("registrar", "ok" if res["estado"] == "ok" else "fallo",
                          detalle=f"{res['id']} {res['estado']}")
             print(json.dumps(res, ensure_ascii=False), flush=True)
+            # Punto unico de reencuadre: pase lo que pase con esta direccion
+            # (ok, halt o error) la siguiente arranca en el formulario.
+            if not await entrar_formulario(s, hwnd):
+                print(f"{res['id']}: no se pudo volver al formulario", flush=True)
     return 0
 
 
