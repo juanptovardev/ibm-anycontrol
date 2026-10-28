@@ -38,11 +38,19 @@ class Halt(Exception):
 
 
 def changed_px(a, b) -> int:
+    """Pixeles distintos entre dos capturas (exacto, vectorizado en C).
+
+    Doble bucle en Python sobre 1255x663 costaba ~150 ms; con ImageChops baja
+    a ~2 ms. Se toma el mayor de los tres canales para no perder diferencias
+    que el gris promediaria a cero.
+    """
     if a.size != b.size:
         return 10 ** 6
-    pa, pb = a.load(), b.load()
-    return sum(1 for y in range(a.height) for x in range(a.width)
-               if pa[x, y] != pb[x, y])
+    from PIL import ImageChops
+    dif = ImageChops.difference(a.convert("RGB"), b.convert("RGB"))
+    r, g, bch = dif.split()
+    mx = ImageChops.lighter(ImageChops.lighter(r, g), bch)
+    return a.width * a.height - mx.histogram()[0]
 
 
 def ink(img, row) -> int:

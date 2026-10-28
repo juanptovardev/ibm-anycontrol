@@ -29,13 +29,13 @@ from PIL import Image
 
 import preflight_auto as pf
 from _mcp import connect, need_hwnd
-from estado import captura, clasificar, ocr_text
+from estado import captura, clasificar, clasificar_rapido, ocr_text
 
 # Bloque del operador: 7 abajo, 72 derecha, 14 abajo (15 filas x 72 columnas).
 BAJAR_INICIO = 7
 ANCHO = 72
 ALTO = 14
-KEY_DELAY_MS = 45  # 93 teclas -> ~8 s; mas rapido empieza a perder pulsaciones
+KEY_DELAY_MS = 35  # 93 teclas -> ~6 s; por debajo se pierden pulsaciones
 
 SEL_MIN_ANCHO = 500   # medido: el bloque de 72 columnas mide 690 px de ancho
 SEL_ROW_MIN = 300     # fila de borde: 683 px medidos en captura real
@@ -122,13 +122,13 @@ async def _seleccionar(s, hwnd: int, dry: bool) -> tuple:
 
 async def _copiar(s) -> None:
     await pf.step(s, "ctrl_c", "copy_clipboard", {})
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(0.25)
 
 
 async def _pegar(s, hwnd: int) -> None:
     await pf.step(s, "alt_tab", "press_keys", {"keys": ["alt", "tab"]})
-    await asyncio.sleep(1.0)
-    st = clasificar(captura(hwnd)[0], usar_jev=False)
+    await asyncio.sleep(0.45)
+    st = clasificar_rapido(captura(hwnd)[0])
     no_ibm = bool((st.get("senales") or {}).get("no_ibm"))
     print(f"G2 pantalla destino: estado={st['estado']} no_ibm={no_ibm} "
           f"error={st.get('error')}", flush=True)
@@ -138,13 +138,13 @@ async def _pegar(s, hwnd: int) -> None:
         raise pf.Halt("G2 la ventana tras Alt+Tab no parece navegador/hoja: no se pega")
     antes = pf.shot(hwnd, "cp-pre-paste")
     await pf.step(s, "ctrl_shift_v", "paste_clipboard", {"shift": True})
-    await asyncio.sleep(1.2)
+    await asyncio.sleep(0.6)
     despues = pf.shot(hwnd, "cp-post-paste")
     diff = pf.changed_px(antes, despues)
     if diff < PASTE_MIN_DIFF:
         print(f"G3 sin cambio visible ({diff}px): un reintento", flush=True)
         await pf.step(s, "ctrl_shift_v_retry", "paste_clipboard", {"shift": True})
-        await asyncio.sleep(1.2)
+        await asyncio.sleep(0.6)
         despues = pf.shot(hwnd, "cp-post-paste-retry")
         diff = pf.changed_px(antes, despues)
     print(f"G3 diff={diff}px", flush=True)

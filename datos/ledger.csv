@@ -3,3 +3,26 @@ PILOTO-01,CR 17B,175-77,,,error,0,0,15:31:13,15:31:14,,NameError: name 'CALLE' i
 PILOTO-01,CR 17B,175-77,,,error,0,0,15:31:47,15:32:13,,B3 estado formulario,0
 PILOTO-01,CR 17B,175-77,,,error,0,0,15:38:06,15:38:41,,halt: G2 tras Alt+Tab sigue siendo la pantalla IBM: no se pega,0
 PILOTO-01,CR 17B,175-77,,,ok,10,150,15:40:53,15:43:44,<PIL.Image.Image image mode=RGB size=1255x663 at 0x1F3826AD250>,10 bloques x 15 filas,0
+D01,CR 17B,175-77,BOG,,error,0,0,17:00:16,17:00:23,,,0
+D02,CR 103D,86-55,BOG,,error,0,0,17:00:23,17:00:29,,,0
+D03,CL 131C,126-72,BOG,,error,0,0,17:00:29,17:00:36,,,0
+D04,CR 55C,161A-67,BOG,,error,0,0,17:00:36,17:00:41,,,0
+D05,CR 109,151C-30,BOG,,error,0,0,17:00:41,17:00:45,,,0
+D01,CR 17B,175-77,BOG,,error,0,0,17:04:17,17:04:21,,,0
+D01,CR 17B,175-77,BOG,,error,0,0,17:03:09,17:04:22,,halt: A1 no se encontro la cabecera Suscript ni sus codigos,0
+D02,CR 103D,86-55,BOG,,error,0,0,17:04:21,17:04:26,,,0
+D02,CR 103D,86-55,BOG,,error,0,0,17:04:22,17:04:27,,,0
+D03,CL 131C,126-72,BOG,,error,0,0,17:04:26,17:04:31,,,0
+D03,CL 131C,126-72,BOG,,error,0,0,17:04:27,17:04:32,,,0
+D04,CR 55C,161A-67,BOG,,error,0,0,17:04:31,17:04:36,,,0
+D04,CR 55C,161A-67,BOG,,error,0,0,17:04:32,17:04:37,,,0
+D05,CR 109,151C-30,BOG,,error,0,0,17:04:36,17:04:40,,,0
+D05,CR 109,151C-30,BOG,,error,0,0,17:04:37,17:04:42,,,0
+D01,CR 17B,175-77,BOG,,error,0,0,17:06:36,17:06:55,,,1
+D02,CR 103D,86-55,BOG,,error,0,0,17:06:55,17:07:15,,,1
+D03,CL 131C,126-72,BOG,,error,0,0,17:07:15,17:07:34,,,1
+D04,CR 55C,161A-67,BOG,,error,0,0,17:07:34,17:07:40,,"halt: izquierda: Error executing tool press_keys: (87, 'SetForegroundWindow', 'El parámetro no es correcto.')",0
+D05,CR 109,151C-30,BOG,,error,0,0,17:07:40,17:08:00,,,1
+D01,CR 17B,175-77,BOG,,error,0,0,17:12:58,17:13:03,,,0
+D02,CR 103D,86-55,BOG,,error,0,0,17:13:03,17:13:08,,,0
+D03,CL 131C,126-72,BOG,,error,0,0,17:13:08,17:13:12,,,0

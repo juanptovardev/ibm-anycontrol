@@ -26,7 +26,12 @@ from estado import clasificar
 
 NAV = [
     ("nav_1", "write_to_anydesk", {"command": "1"}),
-    ("nav_enter", "press_enter", None),
+    ("nav_enter_1", "press_enter", None),
+    ("nav_esc", "press_keys", {"keys": ["escape"]}),
+    ("nav_1b", "write_to_anydesk", {"command": "1"}),
+    ("nav_enter_2", "press_enter", None),
+    ("nav_1c", "write_to_anydesk", {"command": "1"}),
+    ("nav_enter_3", "press_enter", None),
 ]
 
 NOMBRE, CALLE, CASA, COMUNIDAD, DIVISION = 0, 1, 2, 3, 4

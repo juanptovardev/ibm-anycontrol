@@ -33,6 +33,9 @@ from pathlib import Path
 import ciclo
 import pagina
 import preflight_auto as pf
+import nav_prefill
+import native_shot
+import recepcion
 import rows as rowdet
 import traza
 import vigia
@@ -73,6 +76,80 @@ def obedece() -> str:
         time.sleep(1.0)
     return control()
 
+
+
+def lee_direcciones(ruta: Path = None) -> list[dict]:
+    """Entrada del operador: direcciones.csv con parte1;parte2;ficha.
+
+    Excel en espanol guarda con ';'. La columna ficha la llena el agente.
+    El id se deriva del numero de fila: D01, D02...
+    """
+    ruta = ruta or (RAIZ / "datos" / "direcciones.csv")
+    if not ruta.exists():
+        raise SystemExit(f"falta {ruta}")
+    with open(ruta, encoding="utf-8-sig", newline="") as fh:
+        filas = list(csv.DictReader(fh, delimiter=";"))
+    salida = []
+    for i, f in enumerate(filas, 1):
+        p1 = (f.get("parte1") or "").strip()
+        p2 = (f.get("parte2") or "").strip()
+        if not p1 and not p2:
+            continue
+        salida.append({
+            "id": f"D{i:02d}",
+            "direccion_parte1": p1,
+            "direccion_parte2": p2,
+            "comuna": "BOG",
+            "cuenta_matriz_esperada": "",
+            "ficha": (f.get("ficha") or "").strip(),
+        })
+    return salida
+
+
+def escribe_ficha(id_, ficha: str, ruta: Path = None) -> None:
+    """Devuelve la ficha del edificio a la columna C (una celda multilinea)."""
+    ruta = ruta or (RAIZ / "datos" / "direcciones.csv")
+    if not ruta.exists() or not ficha:
+        return
+    with open(ruta, encoding="utf-8-sig", newline="") as fh:
+        filas = list(csv.DictReader(fh, delimiter=";"))
+    try:
+        n = int(id_[1:]) - 1
+    except (ValueError, IndexError):
+        return
+    if not 0 <= n < len(filas):
+        return
+    filas[n]["ficha"] = ficha
+    with open(ruta, "w", encoding="utf-8", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=["parte1", "parte2", "ficha"],
+                           delimiter=";", quoting=csv.QUOTE_MINIMAL)
+        w.writeheader()
+        for f in filas:
+            w.writerow({"parte1": f.get("parte1") or "",
+                        "parte2": f.get("parte2") or "",
+                        "ficha": f.get("ficha") or ""})
+
+
+async def volver_formulario(s, hwnd: int, intentos: int = 3) -> bool:
+    """Sale del listado/ficha hasta quedar de nuevo en el formulario.
+
+    En CONSULTA UNIDADES la barra solo tiene F12=Anterior y al pasar de la
+    ultima pagina el 5250 queda con el teclado inhibido ('A X II'), estado en
+    el que F3 se ignora. Primero se limpia con Escape y se sale con F12
+    (listado -> ficha -> formulario); F3 queda como ultimo recurso.
+    """
+    for intento in range(intentos):
+        img, _ = captura(hwnd)
+        if clasificar(img, usar_jev=False).get("estado") == "formulario":
+            return True
+        if intento == 0:
+            await pf.step(s, "esc_inhibido", "press_keys", {"keys": ["escape"]})
+            await asyncio.sleep(0.4)
+        tecla = "f12" if intento < 2 else "f3"
+        await pf.step(s, f"salir_{tecla}", "press_keys", {"keys": [tecla]})
+        await asyncio.sleep(0.9)
+    img, _ = captura(hwnd)
+    return clasificar(img, usar_jev=False).get("estado") == "formulario"
 
 
 def lee_datos(ruta: Path = DATOS) -> list[dict]:
@@ -124,6 +201,17 @@ async def espera_estado(hwnd: int, objetivos: set[str], intentos: int = 8,
 async def buscar(s, hwnd: int, det: list, parte1: str, parte2: str) -> None:
     """Macro de busqueda validada: clic, flechas, step1, +, step2, +, F10."""
     calle = det[CALLE]
+    # En este emulador no existe borrado: 'delete' no borra y 'home' salta al
+    # primer campo. La unica forma de vaciar un campo es sobrescribirlo con
+    # espacios. Se limpian Nombre y Calle antes de escribir para que no quede
+    # basura que luego desvie la busqueda.
+    for idx in (NOMBRE, CALLE):
+        fila = det[idx]
+        await pf.step(s, f"limpiar_{idx}", "click_point",
+                      {"x": fila["field_x"] + 2, "y": fila["cy"]})
+        await pf.step(s, f"blancos_{idx}", "write_to_anydesk",
+                      {"command": " " * 24})
+        await asyncio.sleep(0.2)
     # UN solo clic pegado al borde izquierdo del subrayado (= celda 1). Dos clics
     # al mismo punto se leen como DOBLE CLIC, seleccionan el campo entero y dejan
     # el teclado inhibido (bug medido el 27/10). No reintroducir el segundo clic.
@@ -145,14 +233,16 @@ async def buscar(s, hwnd: int, det: list, parte1: str, parte2: str) -> None:
 
 
 async def verifica_texto(hwnd: int) -> tuple[bool, str]:
-    """B2: el texto quedo en Calle y NO en Nombre."""
+    """B2: el texto quedo en Calle.
+
+    No se exige Nombre vacio: el formulario conserva texto de busquedas
+    anteriores y este emulador no borra (delete no borra, home salta al primer
+    campo). Si Calle tiene tinta, la escritura llego donde tenia que llegar.
+    """
     img, _vp, det = rowdet.detect(hwnd)
     if len(det) < 3:
         return False, "no se detectaron filas del formulario"
     tinta_calle = pf.ink(img, det[CALLE])
-    tinta_nombre = pf.ink(img, det[NOMBRE])
-    if tinta_nombre > INK_MIN:
-        return False, f"el texto quedo en Nombre (tinta {tinta_nombre})"
     if tinta_calle < INK_MIN:
         return False, f"Calle vacio (tinta {tinta_calle})"
     return True, f"Calle ok (tinta {tinta_calle})"
@@ -185,8 +275,9 @@ def reconecta_si_hace_falta(hwnd: int) -> bool:
 
 
 async def entrar_formulario(s, hwnd: int) -> bool:
-    """Desde el Menu Principal SCABLE al formulario: 1 + ENTER.
+    """Desde el Menu Principal SCABLE al formulario.
 
+    Secuencia del operador (validada en vivo): 1, ENTER, ESC, 1, ENTER, 1, ENTER.
     Solo navega cuando la pantalla no se reconoce (menu principal). Si ya hay un
     estado claro (formulario, listado, ficha) no toca nada.
     """
@@ -194,13 +285,35 @@ async def entrar_formulario(s, hwnd: int) -> bool:
     r = clasificar(img, usar_jev=False)
     if r.get("estado") == "formulario":
         return True
+    # Si quedo en el listado o en la ficha (arranque tras un corte, o el
+    # operador dejo la pantalla ahi), F3 vuelve al formulario. Sin esto la
+    # primera direccion fallaba con 'B1 pantalla cuenta_matriz'.
+    if r.get("estado") in ("cuenta_matriz", "ficha"):
+        for _ in range(3):
+            await pf.step(s, "f3_al_form", "press_keys", {"keys": ["f3"]})
+            await asyncio.sleep(0.9)
+            img, _ = captura(hwnd)
+            if clasificar(img, usar_jev=False).get("estado") == "formulario":
+                return True
+        return False
     if r.get("estado") is not None:
         return False
-    await pf.step(s, "menu_1", "write_to_anydesk", {"command": "1"})
-    await pf.step(s, "menu_enter", "press_enter", None)
-    await asyncio.sleep(0.9)
-    img, _ = captura(hwnd)
-    return clasificar(img, usar_jev=False).get("estado") == "formulario"
+    for _ in range(2):
+        for label, tool, args in nav_prefill.NAV:
+            await pf.step(s, label, tool, args)
+            await asyncio.sleep(0.7)
+        img, _ = captura(hwnd)
+        st = clasificar(img, usar_jev=False)
+        if st.get("estado") == "formulario":
+            return True
+        if st.get("estado") == "error":
+            # Aviso residual del intento anterior: ESC lo limpia.
+            await pf.step(s, "esc_aviso", "press_keys", {"keys": ["escape"]})
+            await asyncio.sleep(0.6)
+            img, _ = captura(hwnd)
+            if clasificar(img, usar_jev=False).get("estado") == "formulario":
+                return True
+    return False
 
 
 async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
@@ -216,6 +329,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
            "hora_inicio": time.strftime("%H:%M:%S"), "hora_fin": "",
            "evidencia": "", "notas": "", "reintentos": 0}
 
+    ficha = ""
     for intento in range(REINTENTOS + 1):
         res["reintentos"] = intento
         try:
@@ -284,15 +398,55 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
                 return res
             traza.evento("buscar", "ok", detalle=f"{id_} {parte1} {parte2}")
 
+            # Ficha del edificio (3 lineas: Cuenta / nombre / direccion) para la
+            # columna C. Ctrl+C sin seleccion en el 5250 copia la pantalla entera
+            # y bloque_de recorta las lineas utiles. Solo lectura.
+            try:
+                await pf.step(s, "copiar_cabecera", "copy_clipboard", {})
+                await asyncio.sleep(0.6)
+                ficha = recepcion.bloque_de(recepcion._portapapeles() or "")
+            except Exception as exc:  # noqa: BLE001
+                ficha = ""
+                print(f"  aviso: sin ficha ({exc})", flush=True)
+
             # Bloque por bloque hasta el aviso de fin de archivo.
             bloques = 0
+            saltadas = 0
+            # La captura de la pagina recien paginada se reutiliza: no se paga
+            # otra vez el OCR de una pantalla que ya se leyo (pagina.avanza la
+            # deja en pagina.ULTIMA). Se limpia al empezar cada direccion.
+            pagina.ULTIMA = None
             for n in range(1, MAX_PAGINAS + 1):
                 if obedece() == "detener":
                     res["notas"] = f"detenido por el panel en el bloque {n}"
                     return res
                 if not reconecta_si_hace_falta(hwnd):
                     raise pf.Halt(f"bloque {n}: sin conexion AnyDesk")
-                await ciclo.extrae(s, hwnd, dry, bajar=(n == 1))
+                # Las 7 bajadas solo en el PRIMER bloque que se extrae: si las
+                # primeras paginas venian sin suscriptores y se saltaron, el
+                # cursor del 5250 sigue sin moverse de su punto.
+                extra = await ciclo.extrae(s, hwnd, dry, bajar=(bloques == 0),
+                                           previo=pagina.ULTIMA)
+                if extra == "vacia":
+                    # La pagina existe pero la columna Suscript viene vacia: no
+                    # se copia ni se pega nada, solo se avanza (orden del
+                    # operador). No se toca la hoja de calculo.
+                    saltadas += 1
+                    traza.evento("extraer", "vacia",
+                                 detalle=f"{id_} bloque {n} sin suscriptores")
+                    if dry:
+                        break
+                    stp = await pagina.avanza(s, hwnd)
+                    decision = pagina.decide(
+                        stp["estado"], bool((stp.get("senales") or {}).get("no_ibm")))
+                    traza.evento("pagina", stp["estado"] or "desconocido",
+                                 detalle=f"{id_} pagina {n} (vacia) decision {decision}")
+                    if decision == "fin":
+                        break
+                    if decision != "seguir":
+                        res["notas"] = f"pagina {n}: estado {stp['estado']}"
+                        return res
+                    continue
                 bloques += 1
                 traza.evento("extraer", "ok", detalle=f"{id_} bloque {n}")
                 if dry:
@@ -313,12 +467,18 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
                 res["notas"] = f"tope de {MAX_PAGINAS} paginas alcanzado"
                 return res
 
-            res["paginas_vistas"] = bloques
+            res["paginas_vistas"] = bloques + saltadas
             res["filas_copiadas"] = bloques * FILAS_POR_BLOQUE
             res["estado"] = "ok"
-            res["notas"] = f"{bloques} bloques x {FILAS_POR_BLOQUE} filas"
+            res["notas"] = (f"{bloques} bloques x {FILAS_POR_BLOQUE} filas"
+                            + (f"; {saltadas} paginas vacias saltadas"
+                               if saltadas else ""))
             img_fin, _vp_fin = captura(hwnd)
             res["evidencia"] = str(native_shot.save(img_fin, f"{id_}-fin"))
+            res["ficha"] = ficha or ""
+            if not dry:
+                escribe_ficha(id_, res["ficha"])
+                await volver_formulario(s, hwnd)
             return res
         except pf.Halt as exc:
             res["notas"] = f"halt: {exc}"
@@ -332,7 +492,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
 
 
 async def main(hwnd: int, solo_id: str | None, dry: bool = False) -> int:
-    filas = lee_datos()
+    filas = lee_direcciones()
     if solo_id:
         filas = [f for f in filas if f.get("id") == solo_id]
     if not filas:

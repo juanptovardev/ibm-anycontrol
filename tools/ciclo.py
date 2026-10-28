@@ -7,7 +7,11 @@ Orden (validado por el operador, sin inventar pasos):
   3. Ctrl+C                                    -> copia al portapapeles remoto
   4. Alt+Tab                                   -> pasa a la hoja
   5. Ctrl+Shift+V                              -> pega sin formato
-  6. Ctrl+Abajo + Abajo                        -> deja la celda lista para el proximo bloque
+  6. Ctrl+Abajo + Abajo                        -> deja la celda lista para el siguiente
+
+Antes de seleccionar se comprueba si la pagina tiene suscriptores: cuando la
+columna Suscript viene vacia NO se copia ni se pega nada y se devuelve
+"vacia" para que el bucle avance de pagina (orden del operador, 27/10).
 
 No verifica el marco amarillo: esa medicion dio falsos negativos con el clic
 que el operador valido. Las puertas que si quedan: G0 (pantalla = listado),
@@ -20,41 +24,61 @@ Uso:
 import asyncio
 import sys
 
-import click_sel
 import cp
 import preflight_auto as pf
-from click_sel import _words, target_celda
+from click_sel import pagina_vacia, target_celda
+from estado import ocr_completo
 
 
-async def extrae(s, hwnd: int, dry: bool = False, bajar: bool = True) -> None:
-    """Extrae un bloque. bajar=False en paginas siguientes: el cursor del 5250
-    conserva su punto al paginar, asi que repetir las 7 bajadas desalinea la
-    seleccion (regla del operador, 27/10)."""
+async def extrae(s, hwnd: int, dry: bool = False, bajar: bool = True,
+                 previo: dict | None = None) -> str:
+    """Extrae un bloque. Devuelve "ok" o "vacia".
+
+    bajar=False en paginas siguientes: el cursor del 5250 conserva su punto al
+    paginar, asi que repetir las 7 bajadas desalinea la seleccion (regla del
+    operador, 27/10).
+
+    `previo` es la captura ya leida que dejo `pagina.avanza` (imagen, texto y
+    palabras). Se reutiliza para no pagar otra captura ni otro OCR de la MISMA
+    pantalla.
+    """
     if bajar:
         await pf.step(s, "bajar_inicio", "press_keys",
-                      {"keys": ["down"] * cp.BAJAR_INICIO, "key_delay_ms": cp.KEY_DELAY_MS})
+                      {"keys": ["down"] * cp.BAJAR_INICIO,
+                       "key_delay_ms": cp.KEY_DELAY_MS})
     else:
         print("A0 pagina siguiente: sin 7 bajadas (el cursor ya esta en su punto)",
               flush=True)
-    img = pf.shot(hwnd, "ciclo-antes")
-    t = target_celda(_words(img))
+    if previo:
+        img, texto, words = previo["img"], previo["texto"], previo["words"]
+        print("A0 reutilizo la captura de la pagina (sin OCR nuevo)", flush=True)
+    else:
+        img = pf.shot(hwnd, "ciclo-antes")
+        texto, words = ocr_completo(img)
+    t = target_celda(words)
     if not t:
         raise pf.Halt("A1 no se encontro la cabecera Suscript ni sus codigos")
     print(f"A1 clic en x={t['x']} y={t['y']} (col {t['col_left']}..{t['col_right']}, "
-          f"ultima fila {t['fila_top']}, barra {t['barra']})", flush=True)
+          f"ultima fila {t['fila_top']}, barra {t['barra']}, "
+          f"suscriptores {t['suscriptores']})", flush=True)
+    vacia, motivo = pagina_vacia(img, t, texto)
+    if vacia:
+        print(f"A1 pagina sin suscriptores ({motivo}): no se copia", flush=True)
+        return "vacia"
     await pf.step(s, "shift_click", "click_point",
                   {"x": t["x"], "y": t["y"], "shift": True})
-    await asyncio.sleep(0.6)
+    await asyncio.sleep(0.5)
     img = pf.shot(hwnd, "ciclo-sel")
     caja, alto = cp.sel_box(img)
     print(f"A2 seleccion caja={caja} alto={alto} (informativo)", flush=True)
     if dry:
         await pf.step(s, "limpiar", "press_keys", {"keys": ["escape"]})
         print("DRY: seleccionada, sin copiar", flush=True)
-        return
+        return "ok"
     await cp._copiar(s)
     await cp._pegar(s, hwnd)
     await cp._posicionar(s, hwnd)
+    return "ok"
 
 
 async def _run(hwnd: int, dry: bool) -> bool:

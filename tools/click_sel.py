@@ -22,6 +22,7 @@ import sys
 
 import pytesseract
 
+import _jev
 import cp
 import preflight_auto as pf
 from cp import SEL_MIN_ALTO, SEL_MIN_ANCHO, sel_box
@@ -45,8 +46,12 @@ def _words(img) -> list[tuple[str, int, int, int, int]]:
 
 
 def _es_cabecera(texto: str) -> bool:
-    """Cabecera de la columna del suscriptor (OCR la lee como Suscript/Suseript)."""
-    up = texto.upper()
+    """Cabecera de la columna del suscriptor (OCR la lee como Suscript/Suseript).
+
+    En escala de grises Tesseract puede devolver `_Suscript` con guion bajo
+    inicial (medido: 31/31 capturas reales con el strip marcan bien la columna).
+    """
+    up = texto.strip("_-.,:;").upper()
     return len(up) >= 4 and up.startswith(("SUS", "SUC"))
 
 
@@ -94,7 +99,61 @@ def target_celda(words) -> dict | None:
     y = fila[2] + fila[4] // 2
     x = col_right - _CLICK_MARGEN_X
     return {"x": x, "y": y, "col_left": col_left, "col_right": col_right,
-            "fila_top": fila[2], "barra": barra}
+            "fila_top": fila[2], "barra": barra,
+            # `suscriptores` = cuantos codigos numericos hay en la columna. Con
+            # 0 la pagina puede estar vacia: no se debe seleccionar nada.
+            "suscriptores": len(codigos),
+            "cabecera": (hx, hy, hw, hh)}
+
+
+# Medido sobre 22 capturas reales del listado: pagina vacia = 0 px verdes;
+# pagina con 1 suscriptor = 237..305 px. El hueco es enorme: umbral seguro.
+_TINTA_VACIA = 40
+
+
+def tinta_suscript(img, celda: dict) -> int:
+    """Pixeles verdes dentro de la caja de datos de la columna Suscript."""
+    hx, hy, hw, hh = celda["cabecera"]
+    x0, y0 = max(0, hx - 5), max(0, hy + hh + 6)
+    x1 = min(img.width, hx + hw + 10)
+    y1 = min(img.height, celda["barra"] - 4)
+    px = img.convert("RGB").load()
+    n = 0
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            r, g, b = px[x, y][:3]
+            if g > 140 and r < 130 and b < 130:
+                n += 1
+    return n
+
+
+def pagina_vacia(img, celda: dict, texto: str = "") -> tuple[bool, str]:
+    """Decide si la pagina del listado no trae ningun suscriptor.
+
+    Regla (medida, no supuesta):
+      - si el OCR encontro codigos en la columna -> hay datos;
+      - si no hay codigos Y la tinta verde de la columna es < 40 px -> vacia
+        (determinista y sin costo);
+      - si no hay codigos pero SI hay tinta (codigo garbleado por el OCR) se
+        pide una segunda opinion a Jev; solo si Jev confirma 'vacia' con
+        confianza >= 0.6 se salta. Si Jev no esta, se asume CON datos: nunca
+        se salta una pagina que podria tener informacion.
+    """
+    if celda.get("suscriptores"):
+        return False, f"{celda['suscriptores']} codigos OCR"
+    tinta = tinta_suscript(img, celda)
+    if tinta < _TINTA_VACIA:
+        return True, f"0 codigos OCR y tinta={tinta}"
+    decision = _jev.ask(
+        (texto or "(sin texto)")[:800],
+        "Responde 'vacia' si la columna de suscriptores del listado no tiene "
+        "ningun codigo, y 'con_datos' si tiene al menos uno.",
+        ["vacia", "con_datos"],
+    )
+    conf = decision.get("confidence") or 0.0
+    if decision.get("ok") and decision.get("choice") == "vacia" and conf >= 0.6:
+        return True, f"jev vacia (tinta={tinta} conf={conf})"
+    return False, f"tinta={tinta} sin codigos OCR (se asume con datos)"
 
 
 async def _seleccionar(s, hwnd: int, dry: bool, force: bool = False) -> tuple:

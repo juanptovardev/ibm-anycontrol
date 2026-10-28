@@ -9,3 +9,4 @@ datos/traza.md
 datos/ui.err
 datos/ui.log
 datos/control.json
+datos/*.err

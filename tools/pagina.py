@@ -2,7 +2,7 @@
 
 Secuencia del operador (congelada):
   1. Despues de pegar y desplazar en la hoja, Alt+Tab regresa al 5250.
-  2. Se pulsa AvPág una vez: el listado pasa a la pagina siguiente.
+  2. Se pulsa AvPag una vez: el listado pasa a la pagina siguiente.
   3. Se mira la pantalla:
        - sale "F12=Anterior / Giro hacia arriba o hacia abajo mas alla del
          primer o ultimo registro en el archivo"  -> la matriz se acabo
@@ -18,12 +18,14 @@ import sys
 
 import preflight_auto as pf
 from _mcp import connect, need_hwnd
-from estado import captura, clasificar
+from estado import captura, clasificar_rapido, clasificar_texto, ocr_completo
 
-ESPERA_TAB = 0.9
-ESPERA_PAGINA = 1.2
+ESPERA_TAB = 0.55
+ESPERA_PAGINA = 0.65
 # Estados que significan "seguimos dentro del listado del 5250".
 IBM_OK = {"cuenta_matriz", "fin_libro"}
+# Ultima captura de avanza(): el ciclo la reutiliza y no repite el OCR.
+ULTIMA = None
 
 
 def decide(estado: str | None, no_ibm: bool = False) -> str:
@@ -41,7 +43,7 @@ async def volver(s, hwnd: int) -> dict:
     """Alt+Tab de regreso al 5250 y verificacion de que es la pantalla IBM."""
     await pf.step(s, "volver_alt_tab", "press_keys", {"keys": ["alt", "tab"]})
     await asyncio.sleep(ESPERA_TAB)
-    st = clasificar(captura(hwnd)[0], usar_jev=False)
+    st = clasificar_rapido(captura(hwnd)[0])
     no_ibm = bool((st.get("senales") or {}).get("no_ibm"))
     print(f"VOLVER pantalla: estado={st['estado']} no_ibm={no_ibm}", flush=True)
     if no_ibm or st["estado"] not in IBM_OK:
@@ -50,11 +52,19 @@ async def volver(s, hwnd: int) -> dict:
 
 
 async def avanza(s, hwnd: int) -> dict:
-    """AvPág + clasificacion. Devuelve el estado con la senal de fin de archivo."""
+    """AvPag + clasificacion. Devuelve el estado con la senal de fin de archivo.
+
+    La captura y el OCR quedan en `ULTIMA`: el ciclo los reutiliza para medir
+    la columna Suscript sin volver a capturar ni re-ejecutar Tesseract sobre la
+    misma pantalla.
+    """
+    global ULTIMA
     await pf.step(s, "avpag", "press_keys", {"keys": ["pagedown"]})
     await asyncio.sleep(ESPERA_PAGINA)
     img = pf.shot(hwnd, "pagina")
-    st = clasificar(img, usar_jev=True)
+    texto, words = ocr_completo(img)
+    st = clasificar_texto(texto, usar_jev=True)
+    ULTIMA = {"img": img, "texto": texto, "words": words}
     senales = st.get("senales") or {}
     print(f"PAGINA estado={st['estado']} conf={st.get('confianza')} "
           f"senal_fin={senales.get('fin')} error={st.get('error')}", flush=True)
