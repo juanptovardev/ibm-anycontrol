@@ -97,5 +97,37 @@ class TestResumen(unittest.TestCase):
         self.assertIn("TOTAL filas pegadas: 150", txt)
 
 
+class TestOpcionesPeligrosas(unittest.TestCase):
+    """'90. Finalizar Sesion' cuelga al agente: nunca se le ofrece a Jev."""
+
+    MENU_PELIGROSO = (
+        "Seleccione una de las siguientes opciones\n"
+        "1. Consulta Edificios\n"
+        "2. Reportes\n"
+        "90. Finalizar Sesion\n"
+    )
+
+    def test_las_peligrosas_no_se_ofrecen_a_jev(self):
+        capturado = {}
+
+        def fake_elige(txt, opciones, instruccion, criteria=None):
+            capturado["opciones"] = list(opciones)
+            return "1", "jev: 1 conf=0.9"
+
+        with patch.object(autonomo, "jev_elige", fake_elige):
+            num, nota = autonomo.jev_opcion_menu(self.MENU_PELIGROSO)
+        self.assertEqual(num, "1")
+        self.assertNotIn("90", capturado["opciones"])
+        self.assertIn("1", capturado["opciones"])
+
+    def test_menu_solo_peligroso_no_pulsa_nada(self):
+        texto = ("Seleccione una de las siguientes opciones\n"
+                 "90. Finalizar Sesion\n91. Cerrar Sesion\n")
+        with patch.object(autonomo, "jev_elige", return_value=("90", "jev")) as mock:
+            num, nota = autonomo.jev_opcion_menu(texto)
+        self.assertIsNone(num)
+        mock.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

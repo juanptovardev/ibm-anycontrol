@@ -196,6 +196,23 @@ class TestDesconectado(unittest.TestCase):
         self.assertNotEqual(estado.reglas(texto)["estado"], "error")
 
 
+class TestFormularioVsMenu(unittest.TestCase):
+    """El menu '1. Consulta Edificios' NO es el formulario (medido 28/10)."""
+
+    def test_opcion_de_menu_no_es_el_formulario(self):
+        texto = ("TCCTMAMO Menu Aplicacion Cuentas Matrices\n"
+                 "Seleccione una de las siguientes opciones\n"
+                 "1. Consulta Edificios\n"
+                 "2. Mantenimiento de Tablas Basicas\n"
+                 "90. Finalizar Sesion\n"
+                 "F3=Salir F4=Solicitud F9=Recuperer F12=Cancelar\n")
+        r = estado.reglas(texto)
+        self.assertNotEqual(r["estado"], "formulario")
+
+    def test_el_formulario_real_sigue_siendo_formulario(self):
+        self.assertEqual(estado.reglas(FORM)["estado"], "formulario")
+
+
 if __name__ == "__main__":
     unittest.main()
 

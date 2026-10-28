@@ -97,6 +97,7 @@ def jev_elige(texto: str, opciones: list[str], instruccion: str,
 
 
 RE_OPCION = re.compile(r"^\s*(\d{1,2})\s*[.)]\s+(.+?)\s*$")
+PELIGROSAS = ("FINALIZAR", "SALIR", "CERRAR", "TERMINAR", "ABANDONAR")
 
 
 def opciones_menu(texto: str) -> dict:
@@ -126,8 +127,14 @@ def jev_opcion_menu(texto: str):
     ops = opciones_menu(texto)
     if len(ops) < 2:
         return None, "la pantalla no tiene un menu numerado legible"
-    criteria = {n: f"{n}. {d}" for n, d in ops.items()}
-    choice, nota = jev_elige(texto, list(ops.keys()), INSTR_MENU, criteria)
+    # Nunca se ofrecen opciones que cierren la sesion o salgan del sistema
+    # (medido: "90. Finalizar Sesion" cuelga el agente).
+    seguras = {n: d for n, d in ops.items()
+               if not any(p in d.upper() for p in PELIGROSAS)}
+    if not seguras:
+        return None, "todas las opciones del menu son peligrosas"
+    criteria = {n: f"{n}. {d}" for n, d in seguras.items()}
+    choice, nota = jev_elige(texto, list(seguras.keys()), INSTR_MENU, criteria)
     if not choice:
         return None, nota
     m = re.match(r"\s*(\d{1,2})", choice)
@@ -193,7 +200,7 @@ def traza_segura(etapa: str, resultado: str, detalle: str = "") -> None:
 
 
 # ------------------------------------------------------------ 2. pre-vuelo
-async def pre_vuelo(s, hwnd: int, intentos: int = 5) -> bool:
+async def pre_vuelo(s, hwnd: int, intentos: int = 8) -> bool:
     """Deja el escritorio remoto en el FORMULARIO. Jev decide si no se sabe."""
     for intento in range(intentos):
         raiz = vigia.raiz(hwnd)
@@ -220,9 +227,22 @@ async def pre_vuelo(s, hwnd: int, intentos: int = 5) -> bool:
                 return True
             continue
 
-        # La logica NO sabe que pantalla es: Jev decide antes de tocar nada.
-        estado_jev, nota = await jev_creen(texto)
-        print(f"  [pre] jev: pantalla={estado_jev} ({nota})")
+        # Pantalla desconocida. Si hay un MENU NUMERADO, esa es la via no
+        # ambigua: Jev elige la opcion que abre la consulta de edificios.
+        # (Medido 28/10: la navegacion real tiene varios niveles y preguntar
+        # primero "que pantalla es" gastaba un turno sin avanzar.)
+        num, nota = jev_opcion_menu(texto)
+        print(f"  [pre] jev: opcion de menu={num} ({nota})")
+        if num:
+            await pf.step(s, "jev_opcion", "write_to_anydesk", {"command": num})
+            await asyncio.sleep(0.5)
+            await pf.step(s, "jev_enter", "press_enter", {})
+            await asyncio.sleep(1.3)
+            continue
+
+        # Sin menu numerado: Jev dice que pantalla es.
+        estado_jev, nota2 = await jev_creen(texto)
+        print(f"  [pre] jev: pantalla={estado_jev} ({nota2})")
         if estado_jev == "formulario":
             return True
         if estado_jev in ("cuenta_matriz", "ficha"):
@@ -231,16 +251,6 @@ async def pre_vuelo(s, hwnd: int, intentos: int = 5) -> bool:
             continue
         if estado_jev == "desconectado":
             await asyncio.sleep(1.5)
-            continue
-
-        # Si hay un menu numerado, Jev elige la opcion que abre la consulta.
-        num, nota2 = jev_opcion_menu(texto)
-        print(f"  [pre] jev: opcion de menu={num} ({nota2})")
-        if num:
-            await pf.step(s, "jev_opcion", "write_to_anydesk", {"command": num})
-            await asyncio.sleep(0.5)
-            await pf.step(s, "jev_enter", "press_enter", {})
-            await asyncio.sleep(1.3)
             continue
 
         # Ultimo recurso: la secuencia de navegacion probada por el operador.

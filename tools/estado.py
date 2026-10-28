@@ -76,7 +76,11 @@ RE_DURO = re.compile(
 RE_NO_ENCONTRADO = re.compile(
     r"NO\s+SE\s+ENCUENTRA|NO\s+ESTA\s+EN\s+EL\s+ARCHIVO", re.IGNORECASE
 )
-RE_FORM = re.compile(r"CONSULTA\s+EDIFICIO", re.IGNORECASE)
+# La cabecera real del formulario es "CONSULTA EDIFICIO-CUENTA MATRIZ". Sin
+# exigir "CUENTA MATRIZ" esta regex tambien casa con la opcion de menu
+# "1. Consulta Edificios" y el menu se clasifica como formulario (medido el
+# 28/10: el agente creyo estar en el formulario y fallo con "sin filas").
+RE_FORM = re.compile(r"CONSULTA\s+EDIFICIO\s*-?\s*CUENTA\s+MATRIZ", re.IGNORECASE)
 RE_UNIDADES = re.compile(r"CONSULTA\s+UNIDADES", re.IGNORECASE)
 # Ficha del edificio: pantalla intermedia entre el formulario y el listado.
 # Comparte cabecera con el formulario ("CONSULTA EDIFICIO-CUENTA MATRIZ"), asi
