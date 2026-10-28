@@ -222,6 +222,17 @@ async def pre_vuelo(s, hwnd: int, intentos: int = 8) -> bool:
         if est == "desconectado":
             await asyncio.sleep(1.5)
             continue
+        # El remoto puede estar en el navegador (se queda ahi tras pegar en la
+        # hoja). Las teclas del 5250 no llegan: hay que volver al 5250 con
+        # Alt+Tab antes de intentar nada (medido el 28/10: el pre-vuelo ciclaba
+        # en balde con la secuencia del operador sobre Chrome).
+        if (st.get("senales") or {}).get("no_ibm"):
+            print("  [pre] el remoto esta en el navegador: Alt+Tab de vuelta al 5250",
+                  flush=True)
+            if await L.ir_al_5250(s, hwnd):
+                continue
+            print("  [pre] no se vuelve al 5250", flush=True)
+            return False
         if est in ("cuenta_matriz", "ficha", "error", "mensajes"):
             if await L.entrar_formulario(s, hwnd):
                 return True

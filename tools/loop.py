@@ -163,7 +163,14 @@ async def volver_formulario(s, hwnd: int, intentos: int = 3) -> bool:
     """
     for intento in range(intentos):
         img, _ = captura(hwnd)
-        if clasificar(img, usar_jev=False).get("estado") == "formulario":
+        st0 = clasificar(img, usar_jev=False)
+        # Si el remoto quedo en el navegador, ESC/F12/F3 no hacen nada: primero
+        # hay que volver al 5250 (medido el 28/10).
+        if not en_ibm(st0):
+            if await ir_al_5250(s, hwnd):
+                img, _ = captura(hwnd)
+                st0 = clasificar(img, usar_jev=False)
+        if st0.get("estado") == "formulario":
             return True
         if intento == 0:
             await pf.step(s, "esc_inhibido", "press_keys", {"keys": ["escape"]})
@@ -297,6 +304,37 @@ def reconecta_si_hace_falta(hwnd: int) -> bool:
     return True
 
 
+# Pantallas del 5250 (o avisos suyos). "no_ibm" significa navegador/hoja.
+ESTADOS_IBM = ("formulario", "ficha", "cuenta_matriz", "fin_libro",
+               "desconectado", "error", "mensajes", "sin_coincidencia")
+
+
+def en_ibm(st: dict) -> bool:
+    """True si la pantalla remota es del 5250 (o un aviso suyo)."""
+    sen = st.get("senales") or {}
+    if sen.get("no_ibm"):
+        return False
+    if sen.get("ibm"):
+        return True
+    return st.get("estado") in ESTADOS_IBM
+
+
+async def ir_al_5250(s, hwnd: int, intentos: int = 4) -> bool:
+    """Si el remoto quedo en el navegador, vuelve al 5250 con Alt+Tab.
+
+    Medido el 28/10: tras pegar en la hoja el remoto se queda en Chrome y
+    todo lo demas (ESC, F3, F12, la secuencia del operador) no hace nada,
+    porque las teclas van al navegador y no al 5250.
+    """
+    for i in range(intentos):
+        img, _ = captura(hwnd)
+        if en_ibm(clasificar(img, usar_jev=False)):
+            return True
+        await pf.step(s, f"alt_tab_ibm_{i}", "press_keys", {"keys": ["alt", "tab"]})
+        await asyncio.sleep(1.3)
+    return False
+
+
 async def entrar_formulario(s, hwnd: int) -> bool:
     """Desde el Menu Principal SCABLE al formulario.
 
@@ -306,6 +344,11 @@ async def entrar_formulario(s, hwnd: int) -> bool:
     """
     img, _ = captura(hwnd)
     r = clasificar(img, usar_jev=False)
+    # Si el remoto quedo en el navegador, las teclas del 5250 no llegan.
+    if not en_ibm(r):
+        if await ir_al_5250(s, hwnd):
+            img, _ = captura(hwnd)
+            r = clasificar(img, usar_jev=False)
     if r.get("estado") == "formulario":
         return True
     # Si quedo en el listado o en la ficha (arranque tras un corte, o el
