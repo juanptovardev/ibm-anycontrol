@@ -106,30 +106,51 @@ def lee_direcciones(ruta: Path = None) -> list[dict]:
     return salida
 
 
-def escribe_ficha(id_, ficha: str, ruta: Path = None) -> None:
-    """Devuelve la ficha del edificio a la columna C (una celda multilinea)."""
+def escribe_ficha(id_, ficha: str, ruta: Path = None) -> str:
+    """Devuelve la ficha del edificio a la columna C (una celda multilinea).
+
+    El CSV suele estar abierto en Excel y en Windows eso bloquea la escritura.
+    La extraccion NO se tumba por eso: se reintenta y, si sigue bloqueado, la
+    ficha queda en datos/fichas_pendientes.csv para volcar a mano.
+
+    Devuelve "" si se escribio, o el motivo del bloqueo.
+    """
     ruta = ruta or (RAIZ / "datos" / "direcciones.csv")
     if not ruta.exists() or not ficha:
-        return
-    with open(ruta, encoding="utf-8-sig", newline="") as fh:
-        filas = list(csv.DictReader(fh, delimiter=";"))
+        return ""
     try:
         n = int(id_[1:]) - 1
     except (ValueError, IndexError):
-        return
+        return ""
+    with open(ruta, encoding="utf-8-sig", newline="") as fh:
+        filas = list(csv.DictReader(fh, delimiter=";"))
     if not 0 <= n < len(filas):
-        return
+        return ""
     filas[n]["ficha"] = ficha
     # utf-8-sig: Excel en espanol reabre el CSV sin BOM como ANSI y garabatea
     # las tildes de la ficha (el dato viene del portapapeles del 5250).
-    with open(ruta, "w", encoding="utf-8-sig", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=["parte1", "parte2", "ficha"],
-                           delimiter=";", quoting=csv.QUOTE_MINIMAL)
-        w.writeheader()
-        for f in filas:
-            w.writerow({"parte1": f.get("parte1") or "",
-                        "parte2": f.get("parte2") or "",
-                        "ficha": f.get("ficha") or ""})
+    for _ in range(3):
+        try:
+            with open(ruta, "w", encoding="utf-8-sig", newline="") as fh:
+                w = csv.DictWriter(fh, fieldnames=["parte1", "parte2", "ficha"],
+                                   delimiter=";", quoting=csv.QUOTE_MINIMAL)
+                w.writeheader()
+                for f in filas:
+                    w.writerow({"parte1": f.get("parte1") or "",
+                                "parte2": f.get("parte2") or "",
+                                "ficha": f.get("ficha") or ""})
+            return ""
+        except PermissionError:
+            time.sleep(0.4)
+    # Sigue bloqueado: la ficha no se pierde.
+    respaldo = ruta.parent / "fichas_pendientes.csv"
+    try:
+        with open(respaldo, "a", encoding="utf-8", newline="") as fh:
+            csv.writer(fh, delimiter=";").writerow(
+                [id_, (ficha or "").replace("\r\n", " | ").replace("\n", " | ")])
+    except OSError:
+        pass
+    return f"CSV bloqueado (abierto en Excel): la ficha quedo en {respaldo.name}"
 
 
 async def volver_formulario(s, hwnd: int, intentos: int = 3) -> bool:
@@ -373,6 +394,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
            "evidencia": "", "notas": "", "reintentos": 0}
 
     ficha = ""
+    aviso_ficha = ""
     for intento in range(REINTENTOS + 1):
         res["reintentos"] = intento
         try:
@@ -456,7 +478,9 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
             # falla despues (halt, corte de AnyDesk, tope de paginas) el dato
             # del edificio no se pierde. Orden del operador (28/10).
             if not dry:
-                escribe_ficha(id_, ficha or "")
+                aviso_ficha = escribe_ficha(id_, ficha or "")
+                if aviso_ficha:
+                    print(f"  aviso: {aviso_ficha}", flush=True)
 
             # Bloque por bloque hasta el aviso de fin de archivo.
             bloques = 0
@@ -521,7 +545,8 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
             res["estado"] = "ok"
             res["notas"] = (f"{bloques} bloques x {FILAS_POR_BLOQUE} filas"
                             + (f"; {saltadas} paginas vacias saltadas"
-                               if saltadas else ""))
+                               if saltadas else "")
+                            + (f"; {aviso_ficha}" if aviso_ficha else ""))
             img_fin, _vp_fin = captura(hwnd)
             res["evidencia"] = str(native_shot.save(img_fin, f"{id_}-fin"))
             res["ficha"] = ficha or ""

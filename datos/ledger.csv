@@ -28,3 +28,5 @@ D02,CR 103D,86-55,BOG,,error,0,0,17:13:03,17:13:08,,,0
 D03,CL 131C,126-72,BOG,,error,0,0,17:13:08,17:13:12,,,0
 D02,CR 103D,86-55,BOG,,error,0,0,15:44:52,15:44:55,,B1 sin filas del formulario,0
 D03,CL 131C,126-72,BOG,,error,0,0,15:44:56,15:44:58,,B1 sin filas del formulario,0
+D02,CR 103D,86-55,BOG,,error,0,0,15:48:42,15:48:57,,PermissionError: [Errno 13] Permission denied: 'C:\\Users\\juanp_8h8f07l\\dev\\matriz-ibm-agent\\datos\\direcciones.csv',0
+D03,CL 131C,126-72,BOG,,error,0,0,15:49:07,15:49:30,,PermissionError: [Errno 13] Permission denied: 'C:\\Users\\juanp_8h8f07l\\dev\\matriz-ibm-agent\\datos\\direcciones.csv',0
