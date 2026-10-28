@@ -27,6 +27,29 @@ from mcp_anydesk_server import window_manager as W  # noqa: E402
 
 ESTADOS = ["formulario", "ficha", "cuenta_matriz", "fin_libro", "desconectado",
            "sin_coincidencia", "error"]
+# Descripcion de cada estado que ve Jev. Con {opcion: opcion} el modelo recibia
+# palabras sueltas ("ficha", "error") y no podia tellas: con la descripcion real
+# de cada pantalla decide mejor.
+CRITERIOS_ESTADO = {
+    "formulario": "Buscador CONSULTA EDIFICIO-CUENTA MATRIZ: campos Nombre, Calle, "
+                  "No.Casa, Comunidad, Division, Equipo y Cuenta Edificio para escribir "
+                  "una direccion y pulsar F10. No hay tabla de unidades.",
+    "ficha": "Ficha de un edificio ya encontrado: muestra Cuenta Edificio, Otras "
+             "Direcciones, Total Unidades, Ultimo Trabajo. Es una ficha, NO un "
+             "listado de unidades.",
+    "cuenta_matriz": "Listado de unidades de una cuenta matriz: tabla con columnas "
+                     "Direccion, Apto, Com, Div, Nodo, Suscript y Est.",
+    "fin_libro": "El listado de unidades pero con el aviso de que se intento pasar "
+                 "mas alla del primer o ultimo registro (giro hacia arriba o hacia "
+                 "abajo).",
+    "desconectado": "Dialogo de AnyDesk: Conexion finalizada por limitacion de "
+                     "licencia, o no se puede acceder a este puesto de trabajo.",
+    "sin_coincidencia": "Aviso de que la calle o la direccion no existe: NO SE "
+                        "ENCUENTRA o NO ESTA EN EL ARCHIVO.",
+    "error": "Aviso duro del 5250: area protegida de la pantalla, requiere "
+             "caracteres numericos, codigo de comunidad invalido, o tecla no "
+             "permitida.",
+}
 # Jev con poca confianza NO es un veredicto: se deja sin clasificar para que
 # el bucle aborte (medido en vivo: una pagina web dio "formulario" con 0.35).
 UMBRAL_JEV = 0.6
@@ -238,9 +261,10 @@ def clasificar_texto(texto: str, usar_jev: bool = True) -> dict:
         resultado["error"] = base["error"]
     if resultado["estado"] is None and usar_jev and not base["senales"]["no_ibm"]:
         recorte = "\n".join(l for l in texto.splitlines() if l.strip())[:2000]
-        decision = ask(recorte or "(pantalla vacia)", INSTRUCCION_JEV, ESTADOS)
+        decision = ask(recorte or "(pantalla vacia)", INSTRUCCION_JEV, ESTADOS,
+                       criteria=CRITERIOS_ESTADO)
         if decision.get("ok"):
-            confianza = decision.get("confidence") or 0.0
+            confianza = float(decision.get("confianza") or 0.0)
             if confianza < UMBRAL_JEV:
                 resultado.update(estado=None, fuente="jev", confianza=confianza,
                                  error=f"jev con confianza baja ({confianza})")

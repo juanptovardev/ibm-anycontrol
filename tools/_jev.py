@@ -26,18 +26,29 @@ def _key() -> str:
     return ""
 
 
-def ask(state: str, instructions: str, options: list[str], model: str = MODEL) -> dict:
-    """Pregunta `choice` a Jev. Devuelve {ok, choice, confidence, probabilities}."""
+def ask(state: str, instructions: str, options: list[str], model: str = MODEL,
+        criteria: dict | None = None) -> dict:
+    """Pregunta `choice` a Jev. Devuelve {ok, choice, confianza, probabilities}.
+
+    `confianza` es la probabilidad de la opcion elegida (probabilities[choice]),
+    que es la metrica fiable: el campo `confidence` de la API no lo es.
+    `confidence` se conserva tal cual para diagnostico.
+
+    `criteria` es el mapa opcion -> descripcion que ve el modelo. Por defecto es
+    {opcion: opcion}; para preguntas con significado (que pantalla es, que
+    opcion de menu) conviene pasar la descripcion real de cada opcion.
+    """
     key = _key()
     if not key:
         return {"ok": False, "error": "sin clave en auth.json"}
+    crit = dict(criteria) if criteria else {opt: opt for opt in options}
     payload = {
         "model": model,
         "state": state,
         "questions": {"estado": {
             "type": "choice",
             "instructions": instructions,
-            "criteria": {opt: opt for opt in options},
+            "criteria": crit,
         }},
     }
     cfg = f'header = "Authorization: Bearer {key}"\n'
@@ -72,9 +83,21 @@ def ask(state: str, instructions: str, options: list[str], model: str = MODEL) -
         answer = json.loads(body)["answers"]["estado"]
     except (ValueError, KeyError, TypeError):
         return {"ok": False, "http_status": status, "error": "respuesta sin answers.estado"}
+    probs = answer.get("probabilities") or {}
+    choice = answer.get("choice")
+    conf_api = answer.get("confidence")
+    # El campo 'confidence' de la API NO es la probabilidad de la opcion elegida.
+    # Medido el 28/10: para la misma pregunta devolvio confidence=0 con
+    # probabilities {vacia: 0.5, con_datos: 0.5}. La metrica fiable es
+    # probabilities[choice]; 'confidence' solo se usa si no hay probabilities.
+    if isinstance(probs, dict) and choice in probs:
+        confianza = float(probs.get(choice) or 0.0)
+    else:
+        confianza = float(conf_api or 0.0)
     return {
         "ok": True,
-        "choice": answer.get("choice"),
-        "confidence": answer.get("confidence"),
-        "probabilities": answer.get("probabilities") or {},
+        "choice": choice,
+        "confidence": conf_api,
+        "confianza": confianza,
+        "probabilities": probs,
     }

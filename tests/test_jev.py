@@ -50,6 +50,28 @@ class TestJev(unittest.TestCase):
         self.assertTrue(r["ok"])
         self.assertEqual(r["choice"], "formulario")
         self.assertEqual(r["confidence"], 0.9)
+        self.assertEqual(r["confianza"], 0.9)
+
+    def test_confianza_viene_de_probabilities_no_del_campo_confidence(self):
+        # Medido el 28/10 contra la API real: 'confidence'=0 con
+        # probabilities {vacia: 0.5, con_datos: 0.5}. La metrica fiable es
+        # probabilities[choice].
+        cuerpo = json.dumps({"answers": {"estado": {
+            "choice": "vacia", "confidence": 0,
+            "probabilities": {"vacia": 0.5, "con_datos": 0.5}}}})
+        with patch.object(_jev, "_key", return_value="k"), \
+             patch.object(_jev.subprocess, "run", return_value=curl(cuerpo + "\n__HTTP__200")):
+            r = _jev.ask("texto", "instruccion", OPCIONES)
+        self.assertEqual(r["confidence"], 0)
+        self.assertEqual(r["confianza"], 0.5)
+
+    def test_sin_probabilities_usa_confidence(self):
+        cuerpo = json.dumps({"answers": {"estado": {
+            "choice": "formulario", "confidence": 0.75}}})
+        with patch.object(_jev, "_key", return_value="k"), \
+             patch.object(_jev.subprocess, "run", return_value=curl(cuerpo + "\n__HTTP__200")):
+            r = _jev.ask("texto", "instruccion", OPCIONES)
+        self.assertEqual(r["confianza"], 0.75)
 
     def test_curl_ausente_no_lanza(self):
         with patch.object(_jev, "_key", return_value="k"), \

@@ -69,6 +69,7 @@ class TestReglas(unittest.TestCase):
 
         with patch.object(estado, "ask", return_value={
                 "ok": True, "choice": "formulario", "confidence": 0.35,
+                "confianza": 0.35,
                 "probabilities": {"formulario": 0.51, "error": 0.45}}):
             r = estado.clasificar(Image.new("RGB", (40, 20), "black"), usar_jev=True)
         self.assertIsNone(r["estado"])
@@ -84,6 +85,7 @@ class TestReglas(unittest.TestCase):
         with patch.object(estado, "ocr_text", return_value="Cuenta Edificio : 34377 F10=Buscar Direccion"), \
                 patch.object(estado, "ask", return_value={
                     "ok": True, "choice": "cuenta_matriz", "confidence": 0.9,
+                    "confianza": 0.9,
                     "probabilities": {"cuenta_matriz": 0.9}}):
             r = estado.clasificar(Image.new("RGB", (40, 20), "black"), usar_jev=True)
         self.assertEqual(r["estado"], "cuenta_matriz")
@@ -111,6 +113,7 @@ class TestReglas(unittest.TestCase):
         with patch.object(estado, "ocr_text", return_value="tabla de direcciones y suscriptores"), \
                 patch.object(estado, "ask", return_value={
                     "ok": True, "choice": "cuenta_matriz", "confidence": 0.9,
+                    "confianza": 0.9,
                     "probabilities": {"cuenta_matriz": 0.9}}):
             r = estado.clasificar(Image.new("RGB", (40, 20), "black"), usar_jev=True)
         self.assertIsNone(r["estado"])

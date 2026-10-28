@@ -149,8 +149,14 @@ def pagina_vacia(img, celda: dict, texto: str = "") -> tuple[bool, str]:
         "Responde 'vacia' si la columna de suscriptores del listado no tiene "
         "ningun codigo, y 'con_datos' si tiene al menos uno.",
         ["vacia", "con_datos"],
+        criteria={
+            "vacia": "La columna Suscript del listado esta vacia: no hay ningun "
+                     "codigo de suscriptor en ninguna fila.",
+            "con_datos": "La columna Suscript tiene al menos un codigo de "
+                         "suscriptor en alguna fila.",
+        },
     )
-    conf = decision.get("confidence") or 0.0
+    conf = float(decision.get("confianza") or 0.0)
     if decision.get("ok") and decision.get("choice") == "vacia" and conf >= 0.6:
         return True, f"jev vacia (tinta={tinta} conf={conf})"
     return False, f"tinta={tinta} sin codigos OCR (se asume con datos)"
