@@ -1,5 +1,4 @@
 """enfocar: garantia de que AnyDesk esta delante antes de cada inyeccion."""
-import asyncio
 import sys
 import unittest
 from pathlib import Path

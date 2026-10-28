@@ -888,7 +888,17 @@ async def main(hwnd: int, solo_id: str | None, dry: bool = False,
             print(json.dumps(res, ensure_ascii=False), flush=True)
             # Punto unico de reencuadre: pase lo que pase con esta direccion
             # (ok, halt o error) la siguiente arranca en el formulario.
-            if await entrar_formulario(s, hwnd):
+            # El Halt del guard de foco (AnyDesk no se pudo poner delante) NO
+            # puede tumbar el lote ni contar como reencuadre fallido: el
+            # reencuadre no respondio "no", sencillamente no pudo hacerse.
+            # Se sigue con la siguiente, igual que hace autonomo.por_direccion.
+            try:
+                ok_reencuadre = await entrar_formulario(s, hwnd)
+            except pf.Halt as exc:
+                print(f"{res['id']}: reencuadre con Halt ({exc}); "
+                      f"se sigue con la siguiente", flush=True)
+                continue
+            if ok_reencuadre:
                 fallos_reencuadre = 0
             else:
                 fallos_reencuadre += 1

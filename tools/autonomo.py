@@ -204,81 +204,97 @@ def traza_segura(etapa: str, resultado: str, detalle: str = "") -> None:
 
 # ------------------------------------------------------------ 2. pre-vuelo
 async def pre_vuelo(s, hwnd: int, intentos: int = 8) -> bool:
-    """Deja el escritorio remoto en el FORMULARIO. Jev decide si no se sabe."""
+    """Deja el escritorio remoto en el FORMULARIO. Jev decide si no se sabe.
+
+    Ningun Halt tumba el lote: un fallo puntual (por ejemplo el guard de foco
+    de `preflight_auto.step`) se cuenta como intento fallido y se sigue con el
+    siguiente, igual que hace `por_direccion` con cada direccion.
+    """
     for intento in range(intentos):
-        raiz = vigia.raiz(hwnd)
-        dlg = vigia.dialogo(raiz)
-        if dlg:
-            print(f"  [pre] corte de AnyDesk: {dlg.get('titulo')!r} -> reconectando")
-            r = vigia.reconecta(raiz)
-            print(f"  [pre] reconexion ok={r.get('ok')} {r.get('motivo','')}")
-            await asyncio.sleep(2.0)
-            # Tras reconectar, el 5250 vuelve a la pantalla de login.
-            if await L.login_si_hace_falta(s, hwnd):
-                print("  [pre] login del 5250 hecho tras reconectar", flush=True)
+        try:
+            if await _pre_vuelo_intento(s, hwnd, intento):
+                return True
+        except pf.Halt as exc:
+            print(f"  [pre] Halt: {exc}", flush=True)
             continue
+    return False
 
-        img, texto, st = _captura_limpia(hwnd)
-        est = st.get("estado")
-        print(f"  [pre] estado={est} conf={st.get('confianza')} "
-              f"err={st.get('error')} texto={len(texto.strip())}c")
 
-        if est == "formulario":
-            return True
-        if est == "desconectado":
-            await asyncio.sleep(1.5)
-            continue
-        # Tras un corte, el 5250 vuelve a la pantalla de login: se entra solo.
-        if est is None and await L.login_si_hace_falta(s, hwnd, img):
-            print("  [pre] login del 5250 hecho", flush=True)
-            continue
-        # El remoto puede estar en el navegador (se queda ahi tras pegar en la
-        # hoja). Las teclas del 5250 no llegan: hay que volver al 5250 con
-        # Alt+Tab antes de intentar nada (medido el 28/10: el pre-vuelo ciclaba
-        # en balde con la secuencia del operador sobre Chrome).
-        if (st.get("senales") or {}).get("no_ibm"):
-            print("  [pre] el remoto esta en el navegador: Alt+Tab de vuelta al 5250",
-                  flush=True)
-            if await L.ir_al_5250(s, hwnd):
-                continue
-            print("  [pre] no se vuelve al 5250", flush=True)
+async def _pre_vuelo_intento(s, hwnd: int, intento: int) -> bool:
+    """Un intento del pre-vuelo. True = el remoto ya esta en el formulario."""
+    raiz = vigia.raiz(hwnd)
+    dlg = vigia.dialogo(raiz)
+    if dlg:
+        print(f"  [pre] corte de AnyDesk: {dlg.get('titulo')!r} -> reconectando")
+        r = vigia.reconecta(raiz)
+        print(f"  [pre] reconexion ok={r.get('ok')} {r.get('motivo','')}")
+        await asyncio.sleep(2.0)
+        # Tras reconectar, el 5250 vuelve a la pantalla de login.
+        if await L.login_si_hace_falta(s, hwnd):
+            print("  [pre] login del 5250 hecho tras reconectar", flush=True)
+        return False
+
+    img, texto, st = _captura_limpia(hwnd)
+    est = st.get("estado")
+    print(f"  [pre] estado={est} conf={st.get('confianza')} "
+          f"err={st.get('error')} texto={len(texto.strip())}c")
+
+    if est == "formulario":
+        return True
+    if est == "desconectado":
+        await asyncio.sleep(1.5)
+        return False
+    # Tras un corte, el 5250 vuelve a la pantalla de login: se entra solo.
+    if est is None and await L.login_si_hace_falta(s, hwnd, img):
+        print("  [pre] login del 5250 hecho", flush=True)
+        return False
+    # El remoto puede estar en el navegador (se queda ahi tras pegar en la
+    # hoja). Las teclas del 5250 no llegan: hay que volver al 5250 con
+    # Alt+Tab antes de intentar nada (medido el 28/10: el pre-vuelo ciclaba
+    # en balde con la secuencia del operador sobre Chrome).
+    if (st.get("senales") or {}).get("no_ibm"):
+        print("  [pre] el remoto esta en el navegador: Alt+Tab de vuelta al 5250",
+              flush=True)
+        if await L.ir_al_5250(s, hwnd):
             return False
-        if est in ("cuenta_matriz", "ficha", "error", "mensajes"):
-            if await L.entrar_formulario(s, hwnd):
-                return True
-            continue
-
-        # Pantalla desconocida. Si hay un MENU NUMERADO, esa es la via no
-        # ambigua: Jev elige la opcion que abre la consulta de edificios.
-        # (Medido 28/10: la navegacion real tiene varios niveles y preguntar
-        # primero "que pantalla es" gastaba un turno sin avanzar.)
-        num, nota = jev_opcion_menu(texto)
-        print(f"  [pre] jev: opcion de menu={num} ({nota})")
-        if num:
-            await pf.step(s, "jev_opcion", "write_to_anydesk", {"command": num})
-            await asyncio.sleep(0.5)
-            await pf.step(s, "jev_enter", "press_enter", {})
-            await asyncio.sleep(1.3)
-            continue
-
-        # Sin menu numerado: Jev dice que pantalla es.
-        estado_jev, nota2 = await jev_creen(texto)
-        print(f"  [pre] jev: pantalla={estado_jev} ({nota2})")
-        if estado_jev == "formulario":
-            return True
-        if estado_jev in ("cuenta_matriz", "ficha"):
-            if await L.volver_formulario(s, hwnd):
-                return True
-            continue
-        if estado_jev == "desconectado":
-            await asyncio.sleep(1.5)
-            continue
-
-        # Ultimo recurso: la secuencia de navegacion probada por el operador.
-        native_shot.save(img, f"pre-desconocido-{intento}")
-        print("  [pre] sin veredicto de Jev: se intenta la secuencia del operador")
+        print("  [pre] no se vuelve al 5250", flush=True)
+        return False
+    if est in ("cuenta_matriz", "ficha", "error", "mensajes"):
         if await L.entrar_formulario(s, hwnd):
             return True
+        return False
+
+    # Pantalla desconocida. Si hay un MENU NUMERADO, esa es la via no
+    # ambigua: Jev elige la opcion que abre la consulta de edificios.
+    # (Medido 28/10: la navegacion real tiene varios niveles y preguntar
+    # primero "que pantalla es" gastaba un turno sin avanzar.)
+    num, nota = jev_opcion_menu(texto)
+    print(f"  [pre] jev: opcion de menu={num} ({nota})")
+    if num:
+        await pf.step(s, "jev_opcion", "write_to_anydesk", {"command": num})
+        await asyncio.sleep(0.5)
+        await pf.step(s, "jev_enter", "press_enter", {})
+        await asyncio.sleep(1.3)
+        return False
+
+    # Sin menu numerado: Jev dice que pantalla es.
+    estado_jev, nota2 = await jev_creen(texto)
+    print(f"  [pre] jev: pantalla={estado_jev} ({nota2})")
+    if estado_jev == "formulario":
+        return True
+    if estado_jev in ("cuenta_matriz", "ficha"):
+        if await L.volver_formulario(s, hwnd):
+            return True
+        return False
+    if estado_jev == "desconectado":
+        await asyncio.sleep(1.5)
+        return False
+
+    # Ultimo recurso: la secuencia de navegacion probada por el operador.
+    native_shot.save(img, f"pre-desconocido-{intento}")
+    print("  [pre] sin veredicto de Jev: se intenta la secuencia del operador")
+    if await L.entrar_formulario(s, hwnd):
+        return True
     return False
 
 
