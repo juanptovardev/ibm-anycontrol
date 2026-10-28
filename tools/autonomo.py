@@ -24,9 +24,11 @@ Jev decide todo lo que la logica no resuelve:
   - si una pagina sin codigos esta vacia o trae suscriptores,
   - que opcion de menu hay que pulsar cuando la pantalla no es conocida.
 
-Criterio de seguridad: nunca se pega dos veces la misma fila. Si el ciclo se
-rompe a media matriz, la direccion se marca como fallida y se sigue con la
-siguiente: un hueco se ve en la hoja, un duplicado no.
+Criterio de seguridad: se evita pegar dos veces la misma fila. El ledger se
+escribe pagina a pagina, ASI QUE la ventana de duplicado es de UNA pagina (si
+el corte cae entre el pegado y su registro). Si el ciclo se rompe a media
+matriz, la direccion se marca como fallida y se sigue con la siguiente: un
+hueco se ve en la hoja, un duplicado no.
 """
 import asyncio
 import re
@@ -195,7 +197,7 @@ def _captura_limpia(hwnd: int, intentos: int = 3, espera: float = 0.9):
 def traza_segura(etapa: str, resultado: str, detalle: str = "") -> None:
     try:
         traza.evento(etapa, resultado, detalle)
-    except (ValueError, TypeError) as exc:
+    except (OSError, ValueError, TypeError) as exc:
         print(f"  (traza {etapa}/{resultado}: {exc})")
 
 

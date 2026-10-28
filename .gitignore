@@ -11,3 +11,5 @@ datos/ui.log
 datos/control.json
 datos/*.err
 datos/fichas_pendientes.csv
+datos/direcciones.csv
+datos/ledger.csv

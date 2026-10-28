@@ -45,11 +45,9 @@ def guarda(usuario: str, clave: str) -> Path:
         json.dumps({"usuario": usuario, "clave": clave}, ensure_ascii=False),
         encoding="utf-8",
     )
-    try:
-        import os as _os
-        _os.chmod(f, 0o600)
-    except Exception:
-        pass
+    # En Windows os.chmod solo alterna el bit de solo lectura: la proteccion
+    # real del fichero viene del perfil de usuario (ACL de %USERPROFILE%), no
+    # de un chmod. Por eso no se finge que chmod(600) proteja nada aqui.
     return f
 
 

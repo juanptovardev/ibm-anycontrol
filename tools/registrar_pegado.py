@@ -39,8 +39,8 @@ def main(argv):
                 "id": id_, "estado": "en_curso", "paginas_vistas": n,
                 "filas_copiadas": n * FILAS_POR_BLOQUE,
                 "hora_fin": time.strftime("%H:%M:%S"),
-                "notas": (f"registro manual: {n} pagina(s) ya pegadas en la hoja"
-                          f" (corridas 16:04 y 16:06 del 28/10); reanudar en la {n + 1}"),
+                "notas": (f"registro manual: {n} pagina(s) ya pegadas en la hoja;"
+                          f" reanudar en la {n + 1}"),
             })
             print(f"registrado {id_}: en_curso, {n} paginas")
     return 0

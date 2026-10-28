@@ -195,6 +195,22 @@ class TestDesconectado(unittest.TestCase):
         texto = "Visualizar Mensajes de Programa\nTeclee respuesta, pulse Intro"
         self.assertNotEqual(estado.reglas(texto)["estado"], "error")
 
+    def test_remoto_apagado_es_otra_causa_que_la_licencia(self):
+        # Texto EXACTO del cliente cuando el PC remoto no responde.
+        texto = ("No se puede acceder al ordenador\n\nActualmente no se puede "
+                 "acceder a este puesto de trabajo.\n\nPor favor, verifica que el "
+                 "ordenador este encendido, conectado a\ninternet y que "
+                 "AnyDesk este abierto.\n")
+        r = estado.reglas(texto)
+        self.assertEqual(r["estado"], "desconectado")
+        self.assertIn("remoto inaccesible", r["error"])
+
+    def test_corte_por_licencia_no_dice_remoto_apagado(self):
+        texto = "Conexi6n finalizada\nlimitaci6n de la licencia"
+        r = estado.reglas(texto)
+        self.assertEqual(r["estado"], "desconectado")
+        self.assertNotIn("remoto inaccesible", r["error"])
+
 
 class TestFormularioVsMenu(unittest.TestCase):
     """El menu '1. Consulta Edificios' NO es el formulario (medido 28/10)."""
@@ -215,19 +231,3 @@ class TestFormularioVsMenu(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-    def test_remoto_apagado_es_otra_causa_que_la_licencia(self):
-        # Texto EXACTO del cliente cuando el PC remoto no responde.
-        texto = ("No se puede acceder al ordenador\n\nActualmente no se puede "
-                 "acceder a este puesto de trabajo.\n\nPor favor, verifica que el "
-                 "ordenador est� encendido, conectado a\ninternet y que "
-                 "AnyDesk est� abierto.\n")
-        r = estado.reglas(texto)
-        self.assertEqual(r["estado"], "desconectado")
-        self.assertIn("remoto inaccesible", r["error"])
-
-    def test_corte_por_licencia_no_dice_remoto_apagado(self):
-        texto = "Conexi6n finalizada\nlimitaci6n de la licencia"
-        r = estado.reglas(texto)
-        self.assertEqual(r["estado"], "desconectado")
-        self.assertNotIn("remoto inaccesible", r["error"])

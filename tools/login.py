@@ -5,6 +5,7 @@ usuario, salto de linea y clave; el emulador reparte ambos campos.
 
 Uso:
     python tools/login.py <hwnd> <usuario> <clave> [--dry]
+    python tools/login.py <hwnd> <usuario>        (pregunta la clave)
 
 --dry hace todo menos el Enter final.
 No escribe credenciales en disco.
@@ -88,6 +89,9 @@ async def entrar(s, hwnd, usuario, clave) -> bool:
     if "intro" in (pytesseract.image_to_string(img2, config="--psm 6") or "").lower():
         await pf.step(s, "intro2", "press_enter", {})
         await asyncio.sleep(1.5)
+    # La clave no puede quedar en el portapapeles (que AnyDesk sincroniza al
+    # PC remoto): se borra en cuanto el 5250 ya la ha cogido.
+    pon_clipboard("")
     return True
 
 
@@ -116,13 +120,21 @@ async def _run(hwnd, usuario, clave, dry):
             await pf.step(s, "enter2", "press_enter", {})
             time.sleep(1.5)
             pf.shot(hwnd, "login-menu")
+        pon_clipboard("")
         print("Enter enviado")
     return 0
 
 
 def main(argv):
     hwnd = need_hwnd(argv, pos=1)
-    usuario, clave = argv[2], argv[3]
+    usuario = argv[2] if len(argv) > 2 else input("usuario 5250: ")
+    if len(argv) > 3:
+        clave = argv[3]
+    else:
+        # Sin argv la clave no queda en el historial del shell ni en la linea
+        # de comandos (que es visible para cualquier proceso del equipo).
+        import getpass
+        clave = getpass.getpass("clave 5250: ")
     return asyncio.run(_run(hwnd, usuario, clave, "--dry" in argv))
 
 

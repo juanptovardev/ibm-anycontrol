@@ -528,9 +528,9 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                                             "fin_libro", "mensajes"})
             traza.evento("estado", st["estado"] or "desconocido",
                          detalle=f"{id_} tras F10 conf {st.get('confianza')}")
-            venue_mensajes = False
+            vino_mensajes = False
             if st["estado"] == "mensajes":
-                venue_mensajes = True
+                vino_mensajes = True
                 # El 5250 abre 'Visualizar Mensajes de Programa' cuando un
                 # programa falla o no encuentra el dato (medido el 28/10 con
                 # D02). Se sale con Intro y el aviso queda escrito en pantalla:
@@ -554,7 +554,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                                                 "sin_coincidencia", "error",
                                                 "fin_libro"})
             if st["estado"] in ("sin_coincidencia", "formulario") or (
-                    venue_mensajes and st["estado"] == "error"):
+                    vino_mensajes and st["estado"] == "error"):
                 # 'formulario' aqui significa que la busqueda no arranco el
                 # listado: el aviso del 5250 nos devolvio al formulario.
                 traza.evento("buscar", "sin_coincidencia", detalle=id_)
@@ -600,7 +600,6 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                                   {"keys": ["pagedown"]})
                     await asyncio.sleep(1.1)
                 await asyncio.sleep(0.9)
-                pagina.ULTIMA = None
 
             # Bloque por bloque hasta el aviso de fin de archivo.
             bloques = desde_pagina
@@ -717,7 +716,18 @@ async def main(hwnd: int, solo_id: str | None, dry: bool = False) -> int:
         traza.evento("pin", "ok", detalle=f"hwnd {hwnd}")
         fallos_reencuadre = 0
         for f in pendientes:
-            res = await procesa(f, hwnd, s, dry)
+            # Reanudacion: si el ultimo estado del ledger es 'en_curso', se
+            # sigue desde la pagina siguiente a la ya pegada. Sin esto esta via
+            # de CLI volveria a pegar desde la pagina 1 (el mismo bug que
+            # duplico D03 el 28/10).
+            prev = hechos.get(f.get("id"), {})
+            desde = 0
+            if prev.get("estado") == "en_curso":
+                try:
+                    desde = int(prev.get("paginas_vistas") or 0)
+                except (TypeError, ValueError):
+                    desde = 0
+            res = await procesa(f, hwnd, s, dry, desde_pagina=desde)
             res["hora_fin"] = time.strftime("%H:%M:%S")
             if not dry:
                 ledger_escribe(res)
