@@ -126,16 +126,33 @@ async def _copiar(s) -> None:
 
 
 async def _pegar(s, hwnd: int) -> None:
+    """Alt+Tab -> esperar a que el remoto llegue al navegador -> pegar.
+
+    El Alt+Tab se entrega al remoto CON RETARDO: medido el 28/10, a los
+    0.45s la pantalla seguia siendo el listado del 5250 (G2 abortaba) y el
+    navegador aparecia un par de segundos despues. Se sondea hasta 3.6s y,
+    si el destino sigue sin ser el navegador, se reenvia el Alt+Tab una vez.
+    """
+    async def _espera_destino(sondeos: int) -> dict:
+        st: dict = {}
+        for _ in range(sondeos):
+            await asyncio.sleep(0.6)
+            st = clasificar_rapido(captura(hwnd)[0])
+            if (st.get("senales") or {}).get("no_ibm"):
+                return st
+        return st
+
     await pf.step(s, "alt_tab", "press_keys", {"keys": ["alt", "tab"]})
-    await asyncio.sleep(0.45)
-    st = clasificar_rapido(captura(hwnd)[0])
+    st = await _espera_destino(6)
+    if not (st.get("senales") or {}).get("no_ibm"):
+        print("G2 el Alt+Tab no ha llegado al navegador: se reenvia", flush=True)
+        await pf.step(s, "alt_tab2", "press_keys", {"keys": ["alt", "tab"]})
+        st = await _espera_destino(5)
     no_ibm = bool((st.get("senales") or {}).get("no_ibm"))
-    print(f"G2 pantalla destino: estado={st['estado']} no_ibm={no_ibm} "
+    print(f"G2 pantalla destino: estado={st.get('estado')} no_ibm={no_ibm} "
           f"error={st.get('error')}", flush=True)
-    if st["estado"] is not None:
-        raise pf.Halt("G2 tras Alt+Tab sigue siendo la pantalla IBM: no se pega")
     if not no_ibm:
-        raise pf.Halt("G2 la ventana tras Alt+Tab no parece navegador/hoja: no se pega")
+        raise pf.Halt("G2 tras Alt+Tab sigue siendo la pantalla IBM: no se pega")
     antes = pf.shot(hwnd, "cp-pre-paste")
     await pf.step(s, "ctrl_shift_v", "paste_clipboard", {"shift": True})
     await asyncio.sleep(0.6)

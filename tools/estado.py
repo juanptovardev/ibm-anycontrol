@@ -136,8 +136,12 @@ RE_MENSAJES = re.compile(
 )
 
 RE_NO_IBM = re.compile(
+    # La hoja real muestra la URL en la barra del navegador:
+    # "docs.google.com/spreadsheets/d/1D-...". Sin "GOOGLE SHEETS" (con
+    # espacio) no casaba y el agente creia estar en el listado IBM
+    # (medido 28/10: G2 abortaba el pegado con "estado=cuenta_matriz").
     r"GOOGLE\s+SHEETS|ASK\s+GEMINI|LIMPIEZA\s+RR|CHROME|FIREFOX|"
-    r"HTTPS?://|WWW\.",
+    r"HTTPS?://|WWW\.|SPREADSHEETS|DOCS\.GOOGLE\.COM|GOOGLE\.COM",
     re.IGNORECASE,
 )
 # Positivo minimo: sin un marcador real del 5250 no se acepta veredicto de Jev.
