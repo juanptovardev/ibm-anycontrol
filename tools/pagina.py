@@ -63,19 +63,32 @@ async def volver(s, hwnd: int, intentos: int = 3, sondeos: int = 4) -> dict:
     raise pf.Halt("volver: el remoto sigue en el navegador tras varios Alt+Tab")
 
 
-async def avanza(s, hwnd: int) -> dict:
+async def avanza(s, hwnd: int, intentos: int = 3) -> dict:
     """AvPag + clasificacion. Devuelve el estado con la senal de fin de archivo.
 
     La captura y el OCR quedan en `ULTIMA`: el ciclo los reutiliza para medir
     la columna Suscript sin volver a capturar ni re-ejecutar Tesseract sobre la
     misma pantalla.
+
+    Medido el 28/10 (run8, D03): hay frames en los que la pantalla no se puede
+    leer ni con las reglas ni con Jev (estado None) y la direccion se perdia.
+    Se recaptura hasta 3 veces. Solo el ultimo intento consulta a Jev, para no
+    gastar cuota en frames de transicion.
     """
     global ULTIMA
     await pf.step(s, "avpag", "press_keys", {"keys": ["pagedown"]})
     await asyncio.sleep(ESPERA_PAGINA)
-    img = pf.shot(hwnd, "pagina")
-    texto, words = ocr_completo(img)
-    st = clasificar_texto(texto, usar_jev=True)
+    st = None
+    img = texto = words = None
+    for i in range(intentos):
+        img = pf.shot(hwnd, "pagina")
+        texto, words = ocr_completo(img)
+        st = clasificar_texto(texto, usar_jev=(i == intentos - 1))
+        if st.get("estado") is not None:
+            break
+        print(f"PAGINA sin lectura (intento {i + 1}/{intentos}): se recaptura",
+              flush=True)
+        await asyncio.sleep(ESPERA_PAGINA)
     ULTIMA = {"img": img, "texto": texto, "words": words}
     senales = st.get("senales") or {}
     print(f"PAGINA estado={st['estado']} conf={st.get('confianza')} "
