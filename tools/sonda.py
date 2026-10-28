@@ -39,7 +39,9 @@ def main():
         except Exception as exc:
             print(f"  captura fallo: {exc}")
             continue
-        st = estado.clasificar(img)
+        # Diagnostico profundo: SI consulta a Jev cuando las reglas no deciden
+        # (la sonda de teclas, en cambio, va solo con reglas para no gastar cuota).
+        st = estado.clasificar(img, usar_jev=True)
         print(f"  viewport={vp['hwnd']} {vp['width']}x{vp['height']} off={vp['offset']}")
         ruta = native_shot.save(img, "sonda")
         print(f"  captura: {ruta}")

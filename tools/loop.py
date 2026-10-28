@@ -293,6 +293,20 @@ async def entrar_formulario(s, hwnd: int) -> bool:
     # con 'B1 pantalla cuenta_matriz' (medido 28/10).
     if r.get("estado") in ("cuenta_matriz", "ficha"):
         return await volver_formulario(s, hwnd)
+    # Aviso duro residual (p. ej. el F10 de la direccion anterior no encontro
+    # nada): el 5250 deja el mensaje abajo y el teclado inhibido, asi que el
+    # item siguiente se quemaria en B1 sin intentar nada. Medido el 28/10: D02
+    # termino con 'B3 estado error' y D03 aborto sin arrancar. ESC limpia el
+    # aviso antes de rendirse (mismo patron que el NAV de aqui abajo).
+    if r.get("estado") == "error":
+        await pf.step(s, "esc_residual", "press_keys", {"keys": ["escape"]})
+        await asyncio.sleep(0.6)
+        img, _ = captura(hwnd)
+        r = clasificar(img, usar_jev=False)
+        if r.get("estado") == "formulario":
+            return True
+        if r.get("estado") in ("cuenta_matriz", "ficha"):
+            return await volver_formulario(s, hwnd)
     if r.get("estado") is not None:
         return False
     for _ in range(2):
@@ -491,8 +505,6 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
         except Exception as exc:  # noqa: BLE001 - un item nunca tumba la tanda
             res["notas"] = f"{type(exc).__name__}: {exc}"
             return res
-    res["hora_fin"] = time.strftime("%H:%M:%S")
-    return res
 
 
 async def main(hwnd: int, solo_id: str | None, dry: bool = False) -> int:
@@ -512,6 +524,7 @@ async def main(hwnd: int, solo_id: str | None, dry: bool = False) -> int:
         await pf.step(s, "focus_click_off", "set_focus_click_mode", {"enabled": False})
         await pf.step(s, "pin", "select_anydesk_window", {"hwnd": hwnd})
         traza.evento("pin", "ok", detalle=f"hwnd {hwnd}")
+        fallos_reencuadre = 0
         for f in pendientes:
             res = await procesa(f, hwnd, s, dry)
             res["hora_fin"] = time.strftime("%H:%M:%S")
@@ -522,8 +535,19 @@ async def main(hwnd: int, solo_id: str | None, dry: bool = False) -> int:
             print(json.dumps(res, ensure_ascii=False), flush=True)
             # Punto unico de reencuadre: pase lo que pase con esta direccion
             # (ok, halt o error) la siguiente arranca en el formulario.
-            if not await entrar_formulario(s, hwnd):
-                print(f"{res['id']}: no se pudo volver al formulario", flush=True)
+            if await entrar_formulario(s, hwnd):
+                fallos_reencuadre = 0
+            else:
+                fallos_reencuadre += 1
+                print(f"{res['id']}: no se pudo volver al formulario "
+                      f"({fallos_reencuadre}/2)", flush=True)
+                # Dos seguidos = la pantalla no es ni el formulario ni el
+                # listado: seguir solo gasta reintentos y ensucia el ledger
+                # con B1 en cascada. Se corta el lote y se avisa.
+                if fallos_reencuadre >= 2:
+                    print("dos reencuadres seguidos fallidos: se corta el lote",
+                          flush=True)
+                    break
     return 0
 
 

@@ -99,6 +99,9 @@ Procesa D01, D02, D03 en orden. Al terminar cada una vuelve al formulario
 5. El ledger dice 150 filas y la hoja tiene menos → desalineación de columnas.
 6. Diálogo de licencia de AnyDesk que no se recupera con `--repetir`.
 
+7. El agente imprime `dos reencuadres seguidos fallidos: se corta el lote` —
+   la pantalla no es ni el formulario ni el listado: llevarla a mano.
+
 ---
 
 ## Presupuesto de tiempo

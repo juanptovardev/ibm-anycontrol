@@ -3,18 +3,28 @@
 Sirve para mapear la navegacion de menus del 5250 sin adivinar: se ve que
 pantalla aparece tras cada pulsacion.
 
-Uso: python tools/sonda_teclas.py <hwnd> 1 enter escape 1 enter
+Uso: python tools/sonda_teclas.py <hwnd> 1 enter escape 1 enter shift+f4
+     python tools/sonda_teclas.py <hwnd> f10 shift+f4
 """
 import asyncio
-import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import native_shot
+import estado
 import preflight_auto as pf
 from _mcp import connect, need_hwnd
+
+
+def split_teclas(t: str) -> list[str]:
+    """'shift+f4' -> ['shift', 'f4'];  'f10' -> ['f10'].
+
+    press_keys recibe la lista de teclas que se sostienen a la vez, no un
+    acorde escrito con '+'. Sin esto la sonda no podia ejercitar Shift+F4,
+    que es justo el paso ficha -> listado del flujo real.
+    """
+    return [k for k in t.split("+") if k] if "+" in t else [t]
 
 
 async def main(hwnd: int, teclas: list[str]) -> int:
@@ -25,10 +35,12 @@ async def main(hwnd: int, teclas: list[str]) -> int:
             if t == "enter":
                 await pf.step(s, f"k{i}_enter", "press_enter", {})
             else:
-                await pf.step(s, f"k{i}_{t}", "press_keys", {"keys": [t]})
+                await pf.step(s, f"k{i}_{t}", "press_keys",
+                              {"keys": split_teclas(t)})
             await asyncio.sleep(1.1)
             img = pf.shot(hwnd, f"sonda-tecla-{i}-{t}")
-            import estado
+            # Sonda de diagnostico: NO consulta a Jev, solo reglas (determinista
+            # y sin cuota). La sonda simple (sonda.py) si lo consulta.
             r = estado.clasificar(img, usar_jev=False)
             print(f"[{i}] {t:<10} estado={r['estado']} conf={r['confianza']} "
                   f"err={r.get('error')}", flush=True)
