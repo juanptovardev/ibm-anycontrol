@@ -486,9 +486,25 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
             # Medido en vivo: sin este paso el bucle se quedaba en 'formulario'.
             st = await espera_estado(hwnd, {"ficha", "cuenta_matriz",
                                             "sin_coincidencia", "error",
-                                            "fin_libro"})
+                                            "fin_libro", "mensajes"})
             traza.evento("estado", st["estado"] or "desconocido",
                          detalle=f"{id_} tras F10 conf {st.get('confianza')}")
+            if st["estado"] == "mensajes":
+                # El 5250 abre 'Visualizar Mensajes de Programa' cuando un
+                # programa falla o no encuentra el dato (medido el 28/10 con
+                # D02). Se sale con Intro y el aviso queda escrito en pantalla:
+                # se guarda en las notas para que el operador lo lea.
+                aviso = (st.get("texto") or "").strip().replace("\n", " | ")[:300]
+                for n in range(2):
+                    await pf.step(s, f"intro_mensajes{n + 1}", "press_enter", {})
+                    await asyncio.sleep(1.0)
+                    st = await espera_estado(hwnd, {"ficha", "cuenta_matriz",
+                                                    "sin_coincidencia", "error",
+                                                    "fin_libro", "formulario",
+                                                    "mensajes"})
+                    if st["estado"] != "mensajes":
+                        break
+                res["notas"] = f"mensajes de programa: {aviso}"
             if st["estado"] == "ficha":
                 await pf.step(s, "shift_f4", "press_keys",
                               {"keys": ["shift", "f4"]})
@@ -496,13 +512,18 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
                 st = await espera_estado(hwnd, {"cuenta_matriz",
                                                 "sin_coincidencia", "error",
                                                 "fin_libro"})
-            if st["estado"] == "sin_coincidencia":
+            if st["estado"] in ("sin_coincidencia", "formulario"):
+                # 'formulario' aqui significa que la busqueda no arranco el
+                # listado: el aviso del 5250 nos devolvio al formulario.
                 traza.evento("buscar", "sin_coincidencia", detalle=id_)
-                res.update(estado="no_encontrado", notas="sin coincidencia")
+                res.update(estado="no_encontrado",
+                           notas=(res.get("notas", "") + "; " if res.get("notas") else "")
+                           + "sin coincidencia")
                 return res
             if st["estado"] != "cuenta_matriz":
                 traza.evento("buscar", "fallo", detalle=f"{id_} estado {st['estado']}")
-                res["notas"] = f"B3 estado {st['estado']}"
+                res["notas"] = (res.get("notas", "") + "; " if res.get("notas") else "") \
+                    + f"B3 estado {st['estado']}"
                 return res
             traza.evento("buscar", "ok", detalle=f"{id_} {parte1} {parte2}")
 
