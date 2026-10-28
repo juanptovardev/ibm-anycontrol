@@ -13,3 +13,4 @@ datos/*.err
 datos/fichas_pendientes.csv
 datos/direcciones.csv
 datos/ledger.csv
+datos/*backup*.csv

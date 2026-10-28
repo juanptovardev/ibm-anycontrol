@@ -221,6 +221,13 @@ async def pre_vuelo(s, hwnd: int, intentos: int = 8) -> bool:
 
 
 async def _pre_vuelo_intento(s, hwnd: int, intento: int) -> bool:
+    """Un intento de dejar el remoto listo. Devuelve True si ya esta.
+
+    Peor caso medido: si el remoto se queda pegado en el navegador, los 8
+    intentos del pre-vuelo (cada uno con sus 4 sub-intentos de `ir_al_5250`)
+    suman ~2 min de reintentos antes de rendirse. Es el precio de que un fallo
+    puntual no tumbe el lote; no se anaden mas capas de reintento.
+    """
     """Un intento del pre-vuelo. True = el remoto ya esta en el formulario."""
     raiz = vigia.raiz(hwnd)
     dlg = vigia.dialogo(raiz)

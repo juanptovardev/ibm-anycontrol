@@ -898,6 +898,13 @@ async def main(hwnd: int, solo_id: str | None, dry: bool = False,
                 print(f"{res['id']}: reencuadre con Halt ({exc}); "
                       f"se sigue con la siguiente", flush=True)
                 continue
+            except Exception as exc:  # noqa: BLE001 - una direccion no tumba el lote
+                # Fallo de entorno Win32 (PrintWindow, captura, foco): no es un
+                # Halt del guard, pero tampoco puede matar el lote entero.
+                print(f"{res['id']}: reencuadre fallo "
+                      f"({type(exc).__name__}: {exc}); se sigue con la siguiente",
+                      flush=True)
+                continue
             if ok_reencuadre:
                 fallos_reencuadre = 0
             else:

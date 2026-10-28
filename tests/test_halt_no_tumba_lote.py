@@ -28,16 +28,13 @@ class _Sesion:
 
 
 class TestLoopMainNoSeTumba(unittest.IsolatedAsyncioTestCase):
-    async def test_halt_en_el_reencuadre_procesa_todas_las_filas(self):
+    async def _corre(self, entrar):
         procesadas = []
 
         async def fake_procesa(fila, hwnd, s, dry=False, desde_pagina=0,
                                solo_ficha=False):
             procesadas.append(fila["id"])
             return {"id": fila["id"], "estado": "error", "notas": "x"}
-
-        async def fake_entrar(s, hwnd):
-            raise pf.Halt("AnyDesk no esta en primer plano")
 
         async def fake_step(s, label, name, args=None):
             return {"isError": False, "text": ""}
@@ -47,7 +44,7 @@ class TestLoopMainNoSeTumba(unittest.IsolatedAsyncioTestCase):
                  {"id": "D03", "direccion_parte1": "C", "direccion_parte2": "3"}]
         with patch.object(L, "connect", lambda: _Sesion()), \
                 patch.object(L, "procesa", fake_procesa), \
-                patch.object(L, "entrar_formulario", fake_entrar), \
+                patch.object(L, "entrar_formulario", entrar), \
                 patch.object(L, "lee_direcciones", lambda: filas), \
                 patch.object(L, "ledger_leido", lambda: {}), \
                 patch.object(L, "ledger_en_curso", lambda: {}), \
@@ -58,6 +55,20 @@ class TestLoopMainNoSeTumba(unittest.IsolatedAsyncioTestCase):
             enf.set_objetivo = lambda h: None
             traza.evento = lambda *a, **k: None
             await L.main(123, None, False)
+        return procesadas
+
+    async def test_halt_en_el_reencuadre_procesa_todas_las_filas(self):
+        async def fake_entrar(s, hwnd):
+            raise pf.Halt("AnyDesk no esta en primer plano")
+
+        procesadas = await self._corre(fake_entrar)
+        self.assertEqual(procesadas, ["D01", "D02", "D03"])
+
+    async def test_excepcion_no_halt_tambien_procesa_todas_las_filas(self):
+        async def fake_entrar(s, hwnd):
+            raise RuntimeError("PrintWindow fallo")
+
+        procesadas = await self._corre(fake_entrar)
         self.assertEqual(procesadas, ["D01", "D02", "D03"])
 
 

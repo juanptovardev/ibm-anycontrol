@@ -56,11 +56,13 @@ class TestEnfocar(unittest.TestCase):
                 patch.object(enfocar, "vigia") as vigia, \
                 patch.object(enfocar, "win32gui") as gui, \
                 patch.object(enfocar, "win32api") as api, \
+                patch.object(enfocar, "win32process") as proc, \
                 patch.object(enfocar, "time") as t:
             vigia.raiz.return_value = 999
             gui.GetForegroundWindow.return_value = 111
             gui.IsIconic.return_value = False
             api.GetCurrentThreadId.return_value = 5
+            proc.GetWindowThreadProcessId.return_value = (0, 0)
             gui.SetForegroundWindow.side_effect = OSError("Acceso denegado.")
             res = enfocar.enfocar(123, intentos=2, espera=0.01)
         self.assertFalse(res["ok"])
