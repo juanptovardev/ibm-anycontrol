@@ -43,6 +43,11 @@ class TestCliReanuda(unittest.TestCase):
         ledger = {"D01": {"estado": "en_curso", "paginas_vistas": "2",
                           "direccion_parte1": "CR 17B",
                           "direccion_parte2": "175-77"}}
+        # La ultima fila del id es un error: si el main volviera a usar
+        # `ledger_leido` para reanudar, devolveria 0 y este test fallaria.
+        ultimo_error = {"D01": {"estado": "error", "paginas_vistas": "0",
+                                "direccion_parte1": "CR 17B",
+                                "direccion_parte2": "175-77"}}
         llamadas = []
 
         async def fake_procesa(fila, hwnd, s, dry=False, desde_pagina=0, solo_ficha=False):
@@ -56,7 +61,7 @@ class TestCliReanuda(unittest.TestCase):
             return True
 
         with patch.object(L, "lee_direcciones", lambda: filas), \
-                patch.object(L, "ledger_leido", lambda: ledger), \
+                patch.object(L, "ledger_leido", lambda: ultimo_error), \
                 patch.object(L, "ledger_en_curso", lambda: ledger), \
                 patch.object(L, "procesa", fake_procesa), \
                 patch.object(L, "ledger_escribe", lambda res: None), \

@@ -22,6 +22,7 @@ Env: MCP_ANYDESK_HWND, MCP_ANYDESK_REPO
 import asyncio
 import sys
 
+import enfocar
 import native_shot
 import rows as rowdet
 from _mcp import call, connect, need_hwnd
@@ -75,6 +76,12 @@ def shot(hwnd, label):
 
 
 async def step(s, label, name, args=None):
+    # Punto unico de inyeccion: si AnyDesk no es la ventana en primer plano, la
+    # tecla o el clic se entregan a otra ventana (o Windows deniega
+    # SetForegroundWindow con error 5 y el server aborta). Se comprueba antes de
+    # CADA llamada porque el foco oscila solo entre bloques.
+    if not enfocar.asegura():
+        raise Halt(f"{label}: AnyDesk no esta en primer plano y no se pudo enfocar")
     res = await call(s, name, args or {})
     if res["isError"]:
         raise Halt(f"{label}: {res['text']}")

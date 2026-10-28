@@ -3,7 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
@@ -262,6 +262,90 @@ class TestSoloFicha(unittest.IsolatedAsyncioTestCase):
         self.assertIn("EDIFICIO UNO", escritas[0][1])
         self.assertEqual(copias["n"], 1)
         self.assertEqual(extraidos["n"], 0)
+
+
+class TestPaginasVistas(unittest.IsolatedAsyncioTestCase):
+    """paginas_vistas cuenta las paginas AVANZADAS (pegadas + saltadas)."""
+
+    async def _corre(self):
+        filas_ledger = []
+        llamadas = {"extrae": 0}
+
+        async def fake_step(s, label, name, args=None):
+            return {"ok": True}
+
+        async def fake_entrar(s, hwnd):
+            return True
+
+        async def fake_buscar(s, hwnd, det, p1, p2):
+            return None
+
+        async def fake_verifica(hwnd):
+            return True, ""
+
+        async def fake_espera(hwnd, objetivos, intentos=8, delay=0.7):
+            return {"estado": "cuenta_matriz", "senales": {"unidades": True},
+                    "texto": "", "confianza": 0.95}
+
+        async def fake_extrae(s, hwnd, dry=False, bajar=True, previo=None):
+            llamadas["extrae"] += 1
+            # primera pagina vacia (se salta), segunda con datos (se pega)
+            return "vacia" if llamadas["extrae"] == 1 else "ok"
+
+        async def fake_volver(s, hwnd, intentos=3, sondeos=4):
+            return True
+
+        async def fake_avanza(s, hwnd):
+            return {"estado": "cuenta_matriz", "senales": {}}
+
+        async def fake_sleep(*_a, **_k):
+            return None
+
+        filas = [{"field_x": 531, "cy": 100 + i} for i in range(8)]
+        with patch.object(L, "captura", lambda h: (MagicMock(), {})), \
+                patch.object(L, "clasificar", lambda img, usar_jev=False:
+                             {"estado": "formulario", "senales": {"form": True},
+                              "confianza": 0.9, "texto": ""}), \
+                patch.object(L, "entrar_formulario", fake_entrar), \
+                patch.object(L, "rowdet") as rowdet, \
+                patch.object(L, "buscar", fake_buscar), \
+                patch.object(L, "verifica_texto", fake_verifica), \
+                patch.object(L, "espera_estado", fake_espera), \
+                patch.object(L.pf, "step", fake_step), \
+                patch.object(L, "traza") as traza, \
+                patch.object(L, "ciclo") as ciclo, \
+                patch.object(L, "pagina") as pagina, \
+                patch.object(L, "escribe_ficha", lambda i, f: ""), \
+                patch.object(L, "ledger_escribe", filas_ledger.append), \
+                patch.object(L, "volver_formulario", fake_entrar), \
+                patch.object(L, "hay_dialogo", lambda h: False), \
+                patch.object(L, "reconecta_si_hace_falta", lambda h: True), \
+                patch.object(L, "obedece", lambda: "seguir"), \
+                patch.object(L.asyncio, "sleep", fake_sleep):
+            rowdet.detect.return_value = (MagicMock(), {}, filas)
+            traza.evento = lambda *a, **k: None
+            ciclo.extrae = fake_extrae
+            pagina.volver = fake_volver
+            pagina.avanza = fake_avanza
+            decisiones = {"n": 0}
+
+            def fake_decide(estado, no_ibm):
+                # 1a pagina (vacia) -> seguir; 2a (pegada) -> fin
+                decisiones["n"] += 1
+                return "fin" if decisiones["n"] >= 2 else "seguir"
+
+            pagina.decide = fake_decide
+            await L.procesa(_fila(), 123, object())
+        return filas_ledger
+
+    async def test_una_pagina_vacia_cuenta_para_reanudar(self):
+        filas = await self._corre()
+        en_curso = [f for f in filas if f.get("estado") == "en_curso"]
+        self.assertTrue(en_curso)
+        # 1 pagina saltada + 1 pegada = 2 paginas avanzadas
+        self.assertEqual(en_curso[0]["paginas_vistas"], 2)
+        # las filas copiadas solo cuentan las pegadas
+        self.assertEqual(en_curso[0]["filas_copiadas"], 15)
 
 
 if __name__ == "__main__":

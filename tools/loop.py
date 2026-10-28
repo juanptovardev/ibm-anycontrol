@@ -33,6 +33,7 @@ from pathlib import Path
 
 import ciclo
 import credenciales
+import enfocar
 import login
 import pagina
 import preflight_auto as pf
@@ -663,8 +664,11 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                                  detalle=f"{id_} pantalla negra")
                     res.update(estado="revisar",
                                notas=(res.get("notas", "") + "; " if res.get("notas") else "")
-                               + "pantalla negra con AnyDesk caido: se reconecto, "
-                                 "se reintenta en la proxima corrida")
+                               + ("pantalla negra con AnyDesk caido: se reconecto, "
+                                  "se reintenta en la proxima corrida"
+                                  if ok_rec else
+                                  "pantalla negra con AnyDesk caido y la "
+                                  "reconexion fallo: se reintenta en la proxima corrida"))
                     return res
                 traza.evento("buscar", "sin_coincidencia", detalle=f"{id_} pantalla vacia")
                 res.update(estado="sin_datos",
@@ -766,11 +770,16 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                 if not dry:
                     parcial = {k: res.get(k, "") for k in CAMPOS_LEDGER}
                     parcial["estado"] = "en_curso"
-                    parcial["paginas_vistas"] = bloques
+                    # paginas_vistas cuenta las paginas AVANZADAS (pegadas + las
+                    # saltadas por estar vacias): el cursor de pagina del 5250
+                    # avanza en los dos casos, asi que si se contaran solo las
+                    # pegadas, al reanudar se volveria a pegar una pagina ya
+                    # pegada. filas_copiadas si cuenta solo las pegadas.
+                    parcial["paginas_vistas"] = bloques + saltadas
                     parcial["filas_copiadas"] = bloques * FILAS_POR_BLOQUE
                     parcial["hora_fin"] = time.strftime("%H:%M:%S")
-                    parcial["notas"] = (f"pagina {n} pegada; reanudar en la "
-                                        f"{bloques + 1}")
+                    parcial["notas"] = (f"pagina {bloques + saltadas} pegada; "
+                                        f"reanudar en la {bloques + saltadas + 1}")
                     ledger_escribe(parcial)
                 traza.evento("extraer", "ok", detalle=f"{id_} bloque {n}")
                 if dry:
@@ -846,6 +855,10 @@ def reanuda_desde(hechos: dict, fila: dict) -> int:
 
 async def main(hwnd: int, solo_id: str | None, dry: bool = False,
                solo_ficha: bool = False) -> int:
+    # Objetivo del modulo de foco: desde aqui, AnyDesk debe quedar delante
+    # antes de cada inyeccion (medido: el foco oscila y las teclas de sistema
+    # y el portapapeles dejan de llegar al remoto).
+    enfocar.set_objetivo(hwnd)
     filas = lee_direcciones()
     if solo_id:
         filas = [f for f in filas if f.get("id") == solo_id]

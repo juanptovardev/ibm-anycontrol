@@ -39,6 +39,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import _jev
+import enfocar
 import loop as L
 import preflight_auto as pf
 import traza
@@ -372,6 +373,8 @@ async def corre(hwnd: int | None, ids: str | None, dry: bool,
         print("STOP: no se encuentra la ventana de AnyDesk", file=sys.stderr)
         return 2
     print(f"escritorio remoto: hwnd={hwnd}")
+    # Modulo de foco: AnyDesk debe quedar delante antes de cada inyeccion.
+    enfocar.set_objetivo(hwnd)
 
     # P0: recuperar las fichas que no se pudieron guardar porque Excel tenia
     # el CSV abierto, antes de leer el archivo de direcciones.
