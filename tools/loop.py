@@ -31,6 +31,8 @@ import time
 from pathlib import Path
 
 import ciclo
+import credenciales
+import login
 import pagina
 import preflight_auto as pf
 import nav_prefill
@@ -304,6 +306,32 @@ def reconecta_si_hace_falta(hwnd: int) -> bool:
     return True
 
 
+async def login_si_hace_falta(s, hwnd: int, img=None) -> bool:
+    """Si el 5250 pide usuario (tras un corte), entra solo con las credenciales.
+
+    Medido el 28/10: la licencia gratuita de AnyDesk corta la sesion cada pocos
+    minutos y al reconectar el 5250 vuelve al login. Sin esto, cada corte
+    termina el trabajo.
+    """
+    if img is None:
+        img, _ = captura(hwnd)
+    try:
+        pide = login.hace_falta(img)
+    except Exception:  # noqa: BLE001 - una captura ilegible no es un login
+        pide = False
+    if not pide:
+        return False
+    cred = credenciales.carga()
+    if not cred:
+        print("  [login] el 5250 pide usuario y no hay credenciales guardadas "
+              f"({credenciales.ruta()})", flush=True)
+        return False
+    print(f"  [login] entrando como {cred['usuario']}", flush=True)
+    ok = await login.entrar(s, hwnd, cred["usuario"], cred["clave"])
+    print(f"  [login] entrada {'ok' if ok else 'fallida'}", flush=True)
+    return ok
+
+
 # Pantallas del 5250 (o avisos suyos). "no_ibm" significa navegador/hoja.
 ESTADOS_IBM = ("formulario", "ficha", "cuenta_matriz", "fin_libro",
                "desconectado", "error", "mensajes", "sin_coincidencia")
@@ -445,6 +473,9 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
             if not reconecta_si_hace_falta(hwnd):
                 res["notas"] = "B0 sin conexion AnyDesk (dialogo de licencia)"
                 return res
+
+            # B0b: tras reconectar, el 5250 vuelve a pedir usuario: se entra solo.
+            await login_si_hace_falta(s, hwnd)
 
             # B1: verificar pantalla antes de teclear.
             await entrar_formulario(s, hwnd)

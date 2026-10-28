@@ -30,3 +30,7 @@ D02,CR 103D,86-55,BOG,,error,0,0,15:44:52,15:44:55,,B1 sin filas del formulario,
 D03,CL 131C,126-72,BOG,,error,0,0,15:44:56,15:44:58,,B1 sin filas del formulario,0
 D02,CR 103D,86-55,BOG,,error,0,0,15:48:42,15:48:57,,PermissionError: [Errno 13] Permission denied: 'C:\\Users\\juanp_8h8f07l\\dev\\matriz-ibm-agent\\datos\\direcciones.csv',0
 D03,CL 131C,126-72,BOG,,error,0,0,15:49:07,15:49:30,,PermissionError: [Errno 13] Permission denied: 'C:\\Users\\juanp_8h8f07l\\dev\\matriz-ibm-agent\\datos\\direcciones.csv',0
+D02,CR 103D,86-55,BOG,,error,0,0,15:52:18,15:52:46,,B3 estado mensajes,0
+D03,CL 131C,126-72,BOG,,error,0,0,15:52:52,15:53:21,,halt: G2 tras Alt+Tab sigue siendo la pantalla IBM: no se pega,0
+D02,CR 103D,86-55,BOG,,error,0,0,15:59:33,15:59:54,,B3 estado desconectado,0
+D03,CL 131C,126-72,BOG,,error,0,0,15:59:54,16:00:07,,B1 pantalla None,0

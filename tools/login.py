@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import preflight_auto as pf  # noqa: E402
 from _mcp import connect, need_hwnd  # noqa: E402
+from estado import captura  # noqa: E402
 
 CF_UNICODETEXT = 13
 user32 = ctypes.windll.user32
@@ -61,6 +62,33 @@ def campo_usuario(img):
             y = data["top"][i] + data["height"][i] // 2
             return data["left"][i] + data["width"][i] + 70, y
     return None
+
+
+def hace_falta(img) -> bool:
+    """True si la pantalla es la de login (tiene la etiqueta Usuario)."""
+    return campo_usuario(img) is not None
+
+
+async def entrar(s, hwnd, usuario, clave) -> bool:
+    """Entra al 5250 con una sesion MCP YA ABIERTA.
+
+    Pega usuario y clave desde el portapapeles local (AnyDesk lo sincroniza)
+    y da Intro; si el sistema pide "Pulse Intro para continuar", da otro.
+    """
+    img, _ = captura(hwnd)
+    xy = campo_usuario(img)
+    if not xy:
+        return False
+    pon_clipboard(usuario + "\r\n" + clave)
+    await pf.step(s, "clic_usuario", "click_point", {"x": xy[0], "y": xy[1]})
+    await pf.step(s, "ctrl_v", "paste_clipboard", {})
+    await pf.step(s, "intro", "press_enter", {})
+    await asyncio.sleep(1.5)
+    img2, _ = captura(hwnd)
+    if "intro" in (pytesseract.image_to_string(img2, config="--psm 6") or "").lower():
+        await pf.step(s, "intro2", "press_enter", {})
+        await asyncio.sleep(1.5)
+    return True
 
 
 async def _run(hwnd, usuario, clave, dry):

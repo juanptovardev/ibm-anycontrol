@@ -210,6 +210,9 @@ async def pre_vuelo(s, hwnd: int, intentos: int = 8) -> bool:
             r = vigia.reconecta(raiz)
             print(f"  [pre] reconexion ok={r.get('ok')} {r.get('motivo','')}")
             await asyncio.sleep(2.0)
+            # Tras reconectar, el 5250 vuelve a la pantalla de login.
+            if await L.login_si_hace_falta(s, hwnd):
+                print("  [pre] login del 5250 hecho tras reconectar", flush=True)
             continue
 
         img, texto, st = _captura_limpia(hwnd)
@@ -221,6 +224,10 @@ async def pre_vuelo(s, hwnd: int, intentos: int = 8) -> bool:
             return True
         if est == "desconectado":
             await asyncio.sleep(1.5)
+            continue
+        # Tras un corte, el 5250 vuelve a la pantalla de login: se entra solo.
+        if est is None and await L.login_si_hace_falta(s, hwnd, img):
+            print("  [pre] login del 5250 hecho", flush=True)
             continue
         # El remoto puede estar en el navegador (se queda ahi tras pegar en la
         # hoja). Las teclas del 5250 no llegan: hay que volver al 5250 con
