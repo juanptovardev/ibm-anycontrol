@@ -45,6 +45,27 @@ def _words(img) -> list[tuple[str, int, int, int, int]]:
     return out
 
 
+def _words_sparse(img) -> list[tuple[str, int, int, int, int]]:
+    """Palabras del listado en modo texto DISPERSO (psm 11).
+
+    Medido el 28/10: el OCR de pantalla completa (psm 6) pierde la fila de
+    cabecera del listado (Direccion | Apto | ... | Suscript | Est) en algunas
+    capturas, aunque la imagen sea identica pixel a pixel a otra que si la lee:
+    es el analisis de maquetacion de Tesseract, no la imagen ni el color. En
+    modo disperso la cabecera SI aparece, y con las mismas coordenadas
+    (Suscript@849,196). Por eso se usa como fallback de la cabecera.
+    """
+    d = pytesseract.image_to_data(img, config="--psm 11",
+                                  output_type=pytesseract.Output.DICT)
+    out = []
+    for i, texto in enumerate(d["text"]):
+        texto = (texto or "").strip()
+        if not texto:
+            continue
+        out.append((texto, d["left"][i], d["top"][i], d["width"][i], d["height"][i]))
+    return out
+
+
 def _es_cabecera(texto: str) -> bool:
     """Cabecera de la columna del suscriptor (OCR la lee como Suscript/Suseript).
 
@@ -66,7 +87,7 @@ def _es_digitos(texto: str) -> bool:
     return bool(re.fullmatch(r"\d{5,}", texto))
 
 
-def target_celda(words) -> dict | None:
+def target_celda(words, cabecera=None) -> dict | None:
     """Ultima celda de la columna Suscript en coordenadas de la captura.
 
     Reglas puras (testeables sin OCR):
@@ -77,13 +98,19 @@ def target_celda(words) -> dict | None:
       - el clic va al borde IZQUIERDO de los codigos de suscriptor: los
         valores van alineados a la derecha y el borde derecho roza Est.
 
+    `cabecera` permite pasar la caja de la cabecera recuperada por otra via
+    (OCR en modo disperso, `_words_sparse`) cuando el OCR de pantalla completa
+    la pierde: los datos siguen saliendo de `words`.
+
     Returns:
         {"x", "y", "col_left", "col_right", "fila_top", "barra"} o None.
     """
-    cab = [w for w in words if _es_cabecera(w[0])]
-    if not cab:
-        return None
-    _, hx, hy, hw, hh = cab[0]
+    if cabecera is None:
+        cab = [w for w in words if _es_cabecera(w[0])]
+        if not cab:
+            return None
+        cabecera = cab[0]
+    _, hx, hy, hw, hh = cabecera
     techo = hy + hh + _DATA_TOP_PAD
     barra = min((w[2] for w in words if _es_barra(w[0])), default=10 ** 6)
     datos = [w for w in words if techo <= w[2] < barra]

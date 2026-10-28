@@ -34,15 +34,39 @@ RUTA = RAIZ / "datos" / "direcciones.csv"
 CAMPOS = ["parte1", "parte2", "ficha"]
 
 
-def leer(ruta: Path = RUTA):
+def _ruta(ruta: Path | None) -> Path:
+    """Resuelve la ruta en el momento de la llamada.
+
+    NO se usa `ruta: Path = RUTA` como default: el default se evalua al
+    importar el modulo, asi que `patch.object(reg, "RUTA", ...)` en los tests
+    no surte efecto y se acabaria leyendo o escribiendo el CSV real del
+    proyecto (perdida silenciosa de los datos del operador).
+    """
+    return RUTA if ruta is None else ruta
+
+
+def leer(ruta: Path | None = None):
+    ruta = _ruta(ruta)
     if not ruta.exists():
         return []
     with open(ruta, encoding="utf-8-sig", newline="") as fh:
         return list(csv.DictReader(fh, delimiter=";"))
 
 
-def escribir(filas, ruta: Path = RUTA):
+def cabecera(ruta: Path | None = None) -> list[str]:
+    """Columnas de la primera fila del CSV."""
+    ruta = _ruta(ruta)
+    if not ruta.exists():
+        return []
+    with open(ruta, encoding="utf-8-sig", newline="") as fh:
+        for fila in csv.reader(fh, delimiter=";"):
+            return [c.strip() for c in fila]
+    return []
+
+
+def escribir(filas, ruta: Path | None = None):
     """Escribe atomico: temporal + os.replace (atomico en Windows)."""
+    ruta = _ruta(ruta)
     tmp = ruta.with_suffix(ruta.suffix + ".tmp")
     try:
         with open(tmp, "w", encoding="utf-8-sig", newline="") as fh:
@@ -62,12 +86,6 @@ def escribir(filas, ruta: Path = RUTA):
         raise
 
 
-def cabecera(ruta: Path = RUTA):
-    """Cabecera real del CSV (lista de columnas, tal cual esta en el archivo)."""
-    with open(ruta, encoding="utf-8-sig", newline="") as fh:
-        return next(csv.reader(fh, delimiter=";"), [])
-
-
 def main(argv):
     listar = "--listar" in argv
     if not RUTA.exists():
@@ -75,7 +93,7 @@ def main(argv):
         # cabecera seria leido por `lee_direcciones` como "0 direcciones".
         print(f"falta {RUTA}", file=sys.stderr)
         return 1
-    cols = cabecera()
+    cols = cabecera(RUTA)
     normalizadas = {c.strip().lower() for c in cols}
     if not {"parte1", "parte2"} <= normalizadas:
         # Sin este guard, un CSV con otra cabecera (p. ej. importado de Excel)
@@ -84,7 +102,7 @@ def main(argv):
         print(f"ERROR: cabecera inesperada: {cols}. Se esperaba parte1;parte2;ficha",
               file=sys.stderr)
         return 1
-    filas = leer()
+    filas = leer(RUTA)
     if listar:
         for f in filas:
             print(f"{f.get('parte1', '')} | {f.get('parte2', '')} | "
@@ -96,7 +114,7 @@ def main(argv):
                         "parte2": (f.get("parte2") or "").strip(),
                         "ficha": ""})
     try:
-        escribir(limpias)
+        escribir(limpias, RUTA)
     except PermissionError:
         # Cubre tanto el open del temporal como el os.replace: con Excel
         # abierto, Windows deniega el reemplazo (WinError 5).
