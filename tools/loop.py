@@ -26,6 +26,7 @@ Uso: python tools/loop.py <hwnd> [id] [--dry]
 import asyncio
 import csv
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -42,7 +43,7 @@ import rows as rowdet
 import traza
 import vigia
 from _mcp import connect, need_hwnd
-from estado import captura, clasificar
+from estado import captura, clasificar, ocr_text
 
 RAIZ = Path(__file__).resolve().parent.parent
 DATOS = RAIZ / "datos" / "datos.csv"
@@ -230,6 +231,52 @@ async def espera_estado(hwnd: int, objetivos: set[str], intentos: int = 8,
     return clasificar(img, usar_jev=True)
 
 
+PENDIENTES = RAIZ / "datos" / "fichas_pendientes.csv"
+
+
+def anydesk_vivo(hwnd: int) -> bool:
+    """True si la ventana de AnyDesk sigue ahi y sin dialogo de corte.
+
+    Un corte de licencia puede verse como pantalla negra igual que un edificio
+    sin datos; antes de dar una direccion por vacia hay que descartar que se
+    haya caido la sesion.
+    """
+    try:
+        raiz = vigia.raiz(hwnd)
+        if not raiz:
+            return False
+        import win32gui
+        if not win32gui.IsWindow(raiz) or not win32gui.IsWindowVisible(raiz):
+            return False
+        return not vigia.dialogo(raiz)
+    except Exception:
+        return False
+
+
+def merge_fichas_pendientes() -> int:
+    """Vuelca las fichas del respaldo (CSV bloqueado por Excel) al CSV.
+
+    Upsert por id: gana la ultima. El respaldo se borra solo si el merge
+    termino bien, para no perder fichas. Se llama al arrancar la corrida.
+    """
+    if not PENDIENTES.exists():
+        return 0
+    try:
+        with open(PENDIENTES, encoding="utf-8-sig", newline="") as f:
+            filas = [r for r in csv.reader(f, delimiter=";") if r and r[0].strip()]
+    except (OSError, csv.Error, UnicodeDecodeError):
+        return 0
+    recuperadas = 0
+    for r in filas:
+        if len(r) < 2:
+            continue
+        if escribe_ficha(r[0].strip(), r[1].strip()) == "":
+            recuperadas += 1
+    if recuperadas:
+        PENDIENTES.unlink(missing_ok=True)
+    return recuperadas
+
+
 async def buscar(s, hwnd: int, det: list, parte1: str, parte2: str) -> None:
     """Macro de busqueda validada: clic, flechas, step1, +, step2, +, F10."""
     calle = det[CALLE]
@@ -262,6 +309,11 @@ async def buscar(s, hwnd: int, det: list, parte1: str, parte2: str) -> None:
     await pf.step(s, "bog", "write_to_anydesk", {"command": "BOG"})
     await pf.step(s, "plus3", "press_keys", {"keys": ["add"]})
     await pf.step(s, "tvc", "write_to_anydesk", {"command": "TVC"})
+    # Observabilidad: se lee el formulario ANTES de F10. Este emulador no
+    # borra, asi que un residuo en No.Casa o Comunidad solo se descubre por el
+    # error del programa, sin decir que campo estaba sucio.
+    img_f, _vp_f, _det_f = rowdet.detect(hwnd)
+    print(f"FORMULARIO antes de F10: {ocr_text(img_f)[:400]}", flush=True)
 
 
 async def verifica_texto(hwnd: int) -> tuple[bool, str]:
@@ -459,8 +511,14 @@ async def entrar_formulario(s, hwnd: int) -> bool:
 
 
 async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
-                  desde_pagina: int = 0) -> dict:
-    """Un item completo. Nunca lanza: devuelve el resultado para el ledger."""
+                  desde_pagina: int = 0, solo_ficha: bool = False) -> dict:
+    """Un item completo. Nunca lanza: devuelve el resultado para el ledger.
+
+    Con solo_ficha=True se busca el edificio, se guarda la ficha en la columna 3
+    del CSV y se termina: no se entra al listado, no se copia y no se pega. Sirve
+    para rellenar la ficha de una direccion que ya se extrajo en una corrida
+    anterior, sin volver a pegar sus filas.
+    """
     inicio = time.time()
     id_ = fila.get("id", "")
     parte1 = fila.get("direccion_parte1", "")
@@ -562,6 +620,24 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                            notas=(res.get("notas", "") + "; " if res.get("notas") else "")
                            + "sin coincidencia")
                 return res
+            if st["estado"] is None:
+                # Pantalla negra o sin contenido. La regla del operador (28/10)
+                # es dejarla vacia y seguir; pero un corte de licencia tambien
+                # se ve negro, asi que primero se descarta que la sesion viva.
+                if not anydesk_vivo(hwnd):
+                    reconecta_si_hace_falta(hwnd)
+                    await login_si_hace_falta(s, hwnd)
+                    traza.evento("reconectar", "ok", detalle=f"{id_} pantalla negra")
+                    res.update(estado="revisar",
+                               notas=(res.get("notas", "") + "; " if res.get("notas") else "")
+                               + "pantalla negra con AnyDesk caido: se reconecto, "
+                                 "se reintenta en la proxima corrida")
+                    return res
+                traza.evento("buscar", "sin_coincidencia", detalle=f"{id_} pantalla vacia")
+                res.update(estado="sin_datos",
+                           notas=(res.get("notas", "") + "; " if res.get("notas") else "")
+                           + "pantalla sin contenido: se deja vacia y se sigue")
+                return res
             if st["estado"] != "cuenta_matriz":
                 traza.evento("buscar", "fallo", detalle=f"{id_} estado {st['estado']}")
                 res["notas"] = (res.get("notas", "") + "; " if res.get("notas") else "") \
@@ -587,6 +663,15 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                 aviso_ficha = escribe_ficha(id_, ficha or "")
                 if aviso_ficha:
                     print(f"  aviso: {aviso_ficha}", flush=True)
+
+            if solo_ficha:
+                nota = ("solo ficha: no se extrajo (la extraccion de esta "
+                        "direccion ya estaba hecha)")
+                if aviso_ficha:
+                    nota += f"; {aviso_ficha}"
+                res.update(estado="ok", notas=nota)
+                print(f"  {nota}", flush=True)
+                return res
 
             # Reanudacion: si el ledger dice que ya se pegaron N paginas de esta
             # direccion, se avanzan N paginas con AvPag antes de extraer. La
@@ -697,7 +782,37 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
             return res
 
 
-async def main(hwnd: int, solo_id: str | None, dry: bool = False) -> int:
+def normaliza_dir(t) -> str:
+    """Texto de direccion comparable: mayusculas y solo letras/digitos."""
+    return re.sub(r"[^A-Z0-9]+", "", str(t or "").upper())
+
+
+def reanuda_desde(hechos: dict, fila: dict) -> int:
+    """Paginas ya pegadas de ESTA direccion; 0 si el ledger es de otra.
+
+    El id es posicional (D01..D0n): si el operador cambia una fila del CSV el
+    id pasa a apuntar a otra direccion, y reanudar seria saltarse la pagina 1
+    del edificio nuevo. Por eso se exige que la direccion del ledger coincida.
+    """
+    prev = hechos.get(fila.get("id"), {}) or {}
+    if prev.get("estado") != "en_curso":
+        return 0
+    if (normaliza_dir(prev.get("direccion_parte1")) !=
+            normaliza_dir(fila.get("direccion_parte1")) or
+            normaliza_dir(prev.get("direccion_parte2")) !=
+            normaliza_dir(fila.get("direccion_parte2"))):
+        print(f"  {fila.get('id')}: el ledger en_curso es de otra direccion "
+              f"({prev.get('direccion_parte1')} {prev.get('direccion_parte2')}):"
+              f" se empieza de cero", flush=True)
+        return 0
+    try:
+        return max(0, int(prev.get("paginas_vistas") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+async def main(hwnd: int, solo_id: str | None, dry: bool = False,
+               solo_ficha: bool = False) -> int:
     filas = lee_direcciones()
     if solo_id:
         filas = [f for f in filas if f.get("id") == solo_id]
@@ -716,18 +831,9 @@ async def main(hwnd: int, solo_id: str | None, dry: bool = False) -> int:
         traza.evento("pin", "ok", detalle=f"hwnd {hwnd}")
         fallos_reencuadre = 0
         for f in pendientes:
-            # Reanudacion: si el ultimo estado del ledger es 'en_curso', se
-            # sigue desde la pagina siguiente a la ya pegada. Sin esto esta via
-            # de CLI volveria a pegar desde la pagina 1 (el mismo bug que
-            # duplico D03 el 28/10).
-            prev = hechos.get(f.get("id"), {})
-            desde = 0
-            if prev.get("estado") == "en_curso":
-                try:
-                    desde = int(prev.get("paginas_vistas") or 0)
-                except (TypeError, ValueError):
-                    desde = 0
-            res = await procesa(f, hwnd, s, dry, desde_pagina=desde)
+            # Reanudacion validada por direccion (el id es posicional).
+            desde = reanuda_desde(hechos, f)
+            res = await procesa(f, hwnd, s, dry, desde_pagina=desde, solo_ficha=solo_ficha)
             res["hora_fin"] = time.strftime("%H:%M:%S")
             if not dry:
                 ledger_escribe(res)

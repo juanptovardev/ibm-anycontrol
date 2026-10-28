@@ -282,23 +282,18 @@ async def pre_vuelo(s, hwnd: int, intentos: int = 8) -> bool:
 
 
 # ------------------------------------------------------------ 3. direcciones
-async def por_direccion(s, hwnd: int, filas: list, dry: bool) -> list:
+async def por_direccion(s, hwnd: int, filas: list, dry: bool,
+                        solo_ficha: bool = False) -> list:
     """Procesa cada direccion pendiente. Devuelve la lista de resultados."""
     resultados = []
     fallos = 0
     for f in filas:
         id_ = f.get("id")
         print(f"\n=== {id_}: {f.get('direccion_parte1')} / {f.get('direccion_parte2')} ===")
-        # Reanudacion: si el ultimo estado del ledger es 'en_curso', se sigue
-        # desde la pagina siguiente a la ya pegada (no se repite lo pegado).
-        prev = L.ledger_leido().get(f.get("id", ""), {})
-        desde = 0
-        if prev.get("estado") == "en_curso":
-            try:
-                desde = int(prev.get("paginas_vistas") or 0)
-            except (TypeError, ValueError):
-                desde = 0
-        res = await L.procesa(f, hwnd, s, dry, desde_pagina=desde)
+        # Reanudacion validada por direccion (el id es posicional: si el
+        # operador cambia una fila del CSV, el id apunta a otra direccion).
+        desde = L.reanuda_desde(L.ledger_leido(), f)
+        res = await L.procesa(f, hwnd, s, dry, desde_pagina=desde, solo_ficha=solo_ficha)
         # B6/B7: el resultado se persiste en el ledger ANTES de seguir. Sin esto
         # el resumen y el dossier releen datos viejos y una re-corrida puede
         # duplicar pegadas.
@@ -369,13 +364,20 @@ def escribe_dossier(hwnd: int, filas: list, hechos: dict, dry: bool) -> Path:
 
 
 # ------------------------------------------------------------ 5. main
-async def corre(hwnd: int | None, ids: str | None, dry: bool) -> int:
+async def corre(hwnd: int | None, ids: str | None, dry: bool,
+                solo_ficha: bool = False) -> int:
     if not hwnd:
         hwnd = buscar_raiz_anydesk()
     if not hwnd:
         print("STOP: no se encuentra la ventana de AnyDesk", file=sys.stderr)
         return 2
     print(f"escritorio remoto: hwnd={hwnd}")
+
+    # P0: recuperar las fichas que no se pudieron guardar porque Excel tenia
+    # el CSV abierto, antes de leer el archivo de direcciones.
+    recuperadas = L.merge_fichas_pendientes()
+    if recuperadas:
+        print(f"fichas recuperadas del respaldo: {recuperadas}")
 
     filas = L.lee_direcciones()
     if ids:
@@ -401,7 +403,7 @@ async def corre(hwnd: int | None, ids: str | None, dry: bool) -> int:
             print("STOP: no se pudo dejar la pantalla en el formulario",
                   file=sys.stderr)
             return 1
-        await por_direccion(s, hwnd, pendientes, dry)
+        await por_direccion(s, hwnd, pendientes, dry, solo_ficha)
 
     hechos = L.ledger_leido()
     print("\n=== RESUMEN ===")
@@ -415,6 +417,7 @@ def main(argv: list) -> int:
     hwnd = None
     ids = None
     dry = False
+    solo_ficha = False
     for a in argv[1:]:
         if a.startswith("--hwnd="):
             try:
@@ -426,13 +429,15 @@ def main(argv: list) -> int:
             ids = a.split("=", 1)[1]
         elif a == "--dry":
             dry = True
+        elif a == "--solo-ficha":
+            solo_ficha = True
         elif a in ("-h", "--help"):
             print(__doc__)
             return 0
         else:
             print(f"opcion desconocida: {a}", file=sys.stderr)
             return 2
-    return asyncio.run(corre(hwnd, ids, dry))
+    return asyncio.run(corre(hwnd, ids, dry, solo_ficha))
 
 
 if __name__ == "__main__":

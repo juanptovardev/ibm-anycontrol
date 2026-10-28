@@ -40,10 +40,12 @@ class TestCliReanuda(unittest.TestCase):
         filas = [{"id": "D01", "direccion_parte1": "CR 17B",
                   "direccion_parte2": "175-77", "comuna": "BOG",
                   "cuenta_matriz_esperada": ""}]
-        ledger = {"D01": {"estado": "en_curso", "paginas_vistas": "2"}}
+        ledger = {"D01": {"estado": "en_curso", "paginas_vistas": "2",
+                          "direccion_parte1": "CR 17B",
+                          "direccion_parte2": "175-77"}}
         llamadas = []
 
-        async def fake_procesa(fila, hwnd, s, dry=False, desde_pagina=0):
+        async def fake_procesa(fila, hwnd, s, dry=False, desde_pagina=0, solo_ficha=False):
             llamadas.append(desde_pagina)
             return {"id": "D01", "estado": "ok", "paginas_vistas": desde_pagina,
                     "filas_copiadas": desde_pagina * 15, "notas": "",

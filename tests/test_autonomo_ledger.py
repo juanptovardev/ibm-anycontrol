@@ -24,7 +24,7 @@ class TestPorDireccionPersiste(unittest.TestCase):
     def test_cada_resultado_se_escribe_en_el_ledger(self):
         escritas = []
 
-        async def fake_procesa(fila, hwnd, s, dry=False, desde_pagina=0):
+        async def fake_procesa(fila, hwnd, s, dry=False, desde_pagina=0, solo_ficha=False):
             return {"id": fila["id"], "estado": "ok", "paginas_vistas": 2,
                     "filas_copiadas": 30, "notas": "2 bloques x 15 filas",
                     "hora_inicio": "10:00:00", "hora_fin": "",
@@ -52,7 +52,7 @@ class TestPorDireccionPersiste(unittest.TestCase):
         self.assertEqual(len(res), 2)
 
     def test_en_dry_no_se_escribe_el_ledger(self):
-        async def fake_procesa(fila, hwnd, s, dry=False, desde_pagina=0):
+        async def fake_procesa(fila, hwnd, s, dry=False, desde_pagina=0, solo_ficha=False):
             return {"id": fila["id"], "estado": "ok"}
 
         async def fake_entrar(s, hwnd):
