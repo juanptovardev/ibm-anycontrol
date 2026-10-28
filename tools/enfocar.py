@@ -1,6 +1,6 @@
-"""Foco del escritorio remoto: garantía de que AnyDesk está delante antes de teclear.
+"""Foco del escritorio remoto: garantia de que AnyDesk esta delante antes de teclear.
 
-Por qué existe este módulo
+Por que existe este modulo
 --------------------------
 Medido el 28/10 en las corridas run4/run5: las teclas de sistema (Alt+Tab) y el
 portapapeles fallan de forma intermitente porque el foco de Windows oscila entre
@@ -8,13 +8,18 @@ la ventana local de AnyDesk y cualquier otra ventana (el propio terminal del
 agente, un Excel, un navegador). Cuando eso pasa:
 
   - `SetForegroundWindow` devuelve `(5, 'Acceso denegado.')` y el server MCP
-    aborta la inyección (`copy_clipboard`, `press_keys`, `click_point`).
+    aborta la inyeccion (`copy_clipboard`, `press_keys`, `click_point`).
   - O peor: la tecla se entrega a la ventana equivocada y el 5250 se queda sin
-    recibirla, así que la puerta G2/G3 aborta la dirección.
+    recibirla, asi que la puerta G2/G3 aborta la direccion.
 
-La regla es simple: **antes de cualquier inyección, AnyDesk tiene que ser la
+La regla es simple: **antes de cualquier inyeccion, AnyDesk tiene que ser la
 ventana en primer plano**. Comprobarlo cuesta una llamada a `GetForegroundWindow`
-(instantánea) y solo se hace el trabajo caro cuando de verdad no lo es.
+(instantanea) y solo se hace el trabajo caro cuando de verdad no lo es.
+
+Medicion posterior (corrida run6 del 28/10): con este modulo, el Alt+Tab de ida
+al navegador y el de vuelta al 5250 acertaron a la primera en las 10 paginas de
+D02, sin un solo reintento. Por eso NO se anadieron mas reintentos ni el
+fallback `Alt+Shift+Tab`: el fix de foco habia resuelto la causa raiz.
 """
 import time
 
@@ -65,10 +70,10 @@ def delante(hwnd=None) -> bool:
 
 
 def enfocar(hwnd=None, intentos: int = INTENTOS, espera: float = ESPERA) -> dict:
-    """Trae AnyDesk al frente y confirma que lo está.
+    """Trae AnyDesk al frente y confirma que lo esta.
 
     Devuelve {"ok", "intentos", "error"}. `ok` es la verdad medida
-    (`GetForegroundWindow`), no la suposición de que la llamada funcionó.
+    (`GetForegroundWindow`), no la suposicion de que la llamada funciono.
     """
     r = raiz(hwnd)
     if r is None:
@@ -76,12 +81,26 @@ def enfocar(hwnd=None, intentos: int = INTENTOS, espera: float = ESPERA) -> dict
     if not _WIN32:
         return {"ok": True, "intentos": 0, "error": None}
     ultimo = None
+    intentos_real = 0
     for i in range(1, max(1, intentos) + 1):
+        intentos_real = i
         if win32gui.GetForegroundWindow() == r:
             return {"ok": True, "intentos": i, "error": None}
         try:
             if win32gui.IsIconic(r):
                 win32gui.ShowWindow(r, win32con.SW_RESTORE)
+            # Truco clasico de Windows: una pulsacion de ALT ficticia concede al
+            # proceso el derecho a poner una ventana en primer plano (el
+            # bloqueo de primer plano se libera para quien recibe la ultima
+            # entrada). Sin esto, un proceso lanzado desde un cmd.exe OCULTO no
+            # puede robarle el foco a la terminal del operador y SetForeground-
+            # Window falla con (5, 'Acceso denegado.').
+            try:
+                win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
+                win32api.keybd_event(win32con.VK_MENU, 0,
+                                     win32con.KEYEVENTF_KEYUP, 0)
+            except Exception:  # noqa: BLE001 - es un truco, no un requisito
+                pass
             # AttachThreadInput: sin esto Windows deniega SetForegroundWindow
             # cuando otra ventana tiene el bloqueo de primer plano (error 5).
             hilo_fg = win32process.GetWindowThreadProcessId(
@@ -105,7 +124,7 @@ def enfocar(hwnd=None, intentos: int = INTENTOS, espera: float = ESPERA) -> dict
         ok = win32gui.GetForegroundWindow() == r
     except Exception:  # noqa: BLE001
         ok = False
-    return {"ok": ok, "intentos": intentos,
+    return {"ok": ok, "intentos": intentos_real,
             "error": None if ok else (ultimo or "no se pudo poner al frente")}
 
 

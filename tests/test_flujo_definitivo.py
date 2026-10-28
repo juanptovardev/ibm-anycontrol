@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
 import loop as L
+import preflight_auto as pf
 
 
 def _fila(id_="D02", p1="CR 84A", p2="145-94"):
@@ -346,6 +347,67 @@ class TestPaginasVistas(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(en_curso[0]["paginas_vistas"], 2)
         # las filas copiadas solo cuentan las pegadas
         self.assertEqual(en_curso[0]["filas_copiadas"], 15)
+
+
+class TestReencuadreNoTumbaElLote(unittest.IsolatedAsyncioTestCase):
+    """Un error puntual en el reencuadre no puede matar el lote.
+
+    Medido el 28/10: el Halt del guard de foco dentro de `entrar_formulario`
+    salio del bucle y mato la corrida entera; D05 nunca arranco.
+    """
+
+    async def test_un_halt_en_el_reencuadre_no_mata_el_lote(self):
+        import autonomo
+
+        filas = [{"id": "D01", "direccion_parte1": "CR 17B",
+                  "direccion_parte2": "175-77"},
+                 {"id": "D02", "direccion_parte1": "CR 84A",
+                  "direccion_parte2": "145-94"},
+                 {"id": "D03", "direccion_parte1": "CR 54A",
+                  "direccion_parte2": "149-29"}]
+
+        async def fake_procesa(fila, hwnd, s, dry=False, desde_pagina=0,
+                               solo_ficha=False):
+            return {"id": fila["id"], "estado": "ok", "paginas_vistas": 1,
+                    "filas_copiadas": 15, "notas": ""}
+
+        async def fake_entrar(s, hwnd):
+            raise pf.Halt("AnyDesk no esta en primer plano")
+
+        with patch.object(L, "procesa", fake_procesa), \
+                patch.object(L, "entrar_formulario", fake_entrar), \
+                patch.object(L, "ledger_escribe", lambda res: None), \
+                patch.object(L, "ledger_en_curso", lambda: {}), \
+                patch.object(autonomo, "traza_segura", lambda *a, **k: None):
+            res = await autonomo.por_direccion(object(), 1, filas, False)
+        self.assertEqual(len(res), 3)
+
+    async def test_un_reencuadre_que_dice_no_si_corta_el_lote(self):
+        import autonomo
+
+        filas = [{"id": "D01", "direccion_parte1": "CR 17B",
+                  "direccion_parte2": "175-77"},
+                 {"id": "D02", "direccion_parte1": "CR 84A",
+                  "direccion_parte2": "145-94"},
+                 {"id": "D03", "direccion_parte1": "CR 54A",
+                  "direccion_parte2": "149-29"}]
+
+        async def fake_procesa(fila, hwnd, s, dry=False, desde_pagina=0,
+                               solo_ficha=False):
+            return {"id": fila["id"], "estado": "ok", "paginas_vistas": 1,
+                    "filas_copiadas": 15, "notas": ""}
+
+        async def fake_entrar(s, hwnd):
+            return False
+
+        with patch.object(L, "procesa", fake_procesa), \
+                patch.object(L, "entrar_formulario", fake_entrar), \
+                patch.object(L, "ledger_escribe", lambda res: None), \
+                patch.object(L, "ledger_en_curso", lambda: {}), \
+                patch.object(autonomo, "traza_segura", lambda *a, **k: None):
+            res = await autonomo.por_direccion(object(), 1, filas, False)
+        # MAX_FALLOS_REENCUADRE = 2 -> se procesan 2 y el tercero se corta
+        self.assertEqual(len(res), 2)
 
 
 if __name__ == "__main__":

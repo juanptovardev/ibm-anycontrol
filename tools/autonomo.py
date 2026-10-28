@@ -307,14 +307,36 @@ async def por_direccion(s, hwnd: int, filas: list, dry: bool,
               f"filas={res.get('filas_copiadas')} | {res.get('notas','')}")
         traza_segura("registrar", "ok" if res.get("estado") == "ok" else "fallo",
                      f"{id_} {res.get('notas','')}")
-        if await L.entrar_formulario(s, hwnd):
+        # Reencuadre al formulario. Si aqui revienta (por ejemplo el foco se
+        # perdio y `step` corto con Halt) la EXCEPCION NO debe tumbar el
+        # lote: se anota y se sigue con la siguiente direccion. Medido el
+        # 28/10: un Halt aqui mato la corrida y D05 nunca arranco.
+        # Un error puntual NO cuenta como reencuadre fallido (el entorno puede
+        # estar bien y el foco haber temblado); solo cuenta si el reencuadre
+        # respondio "no" de verdad.
+        error_puntual = False
+        try:
+            ok = await L.entrar_formulario(s, hwnd)
+        except pf.Halt as exc:
+            ok = False
+            error_puntual = True
+            print(f"  aviso: el reencuadre fallo ({exc}); se sigue con la "
+                  f"siguiente direccion", flush=True)
+        except Exception as exc:  # noqa: BLE001 - una direccion no tumba el lote
+            ok = False
+            error_puntual = True
+            print(f"  aviso: el reencuadre fallo ({type(exc).__name__}: {exc}); "
+                  f"se sigue con la siguiente direccion", flush=True)
+        if ok:
             fallos = 0
-        else:
-            fallos += 1
-            print(f"  no se pudo volver al formulario ({fallos}/{MAX_FALLOS_REENCUADRE})")
-            if fallos >= MAX_FALLOS_REENCUADRE:
-                print("STOP: dos reencuadres seguidos fallidos", file=sys.stderr)
-                break
+            continue
+        if error_puntual:
+            continue
+        fallos += 1
+        print(f"  no se pudo volver al formulario ({fallos}/{MAX_FALLOS_REENCUADRE})")
+        if fallos >= MAX_FALLOS_REENCUADRE:
+            print("STOP: dos reencuadres seguidos fallidos", file=sys.stderr)
+            break
     return resultados
 
 
