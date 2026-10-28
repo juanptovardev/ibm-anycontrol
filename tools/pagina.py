@@ -20,7 +20,7 @@ import preflight_auto as pf
 from _mcp import connect, need_hwnd
 from estado import captura, clasificar_rapido, clasificar_texto, ocr_completo
 
-ESPERA_TAB = 0.55
+ESPERA_TAB = 0.8
 ESPERA_PAGINA = 0.65
 # Estados que significan "seguimos dentro del listado del 5250".
 IBM_OK = {"cuenta_matriz", "fin_libro"}
@@ -39,16 +39,28 @@ def decide(estado: str | None, no_ibm: bool = False) -> str:
     return "abortar"
 
 
-async def volver(s, hwnd: int) -> dict:
-    """Alt+Tab de regreso al 5250 y verificacion de que es la pantalla IBM."""
-    await pf.step(s, "volver_alt_tab", "press_keys", {"keys": ["alt", "tab"]})
-    await asyncio.sleep(ESPERA_TAB)
-    st = clasificar_rapido(captura(hwnd)[0])
-    no_ibm = bool((st.get("senales") or {}).get("no_ibm"))
-    print(f"VOLVER pantalla: estado={st['estado']} no_ibm={no_ibm}", flush=True)
-    if no_ibm or st["estado"] not in IBM_OK:
-        raise pf.Halt(f"volver: no se llego al listado (estado {st['estado']})")
-    return st
+async def volver(s, hwnd: int, intentos: int = 3, sondeos: int = 4) -> dict:
+    """Alt+Tab de regreso al 5250 y verificacion de que es la pantalla IBM.
+
+    Medido el 28/10: el remoto tarda 1-3 s en procesar el Alt+Tab, asi que una
+    espera fija no basta. Se sondea la pantalla y, si sigue en el navegador, se
+    reenvia el Alt+Tab.
+    """
+    for i in range(intentos):
+        await pf.step(s, f"volver_alt_tab_{i}", "press_keys", {"keys": ["alt", "tab"]})
+        for _ in range(sondeos):
+            await asyncio.sleep(ESPERA_TAB)
+            st = clasificar_rapido(captura(hwnd)[0])
+            senales = st.get("senales") or {}
+            estado = st.get("estado")
+            if estado in IBM_OK:
+                print(f"VOLVER pantalla: estado={estado} (alt+tab {i + 1})", flush=True)
+                return st
+            if not senales.get("no_ibm"):
+                # Ya se esta en el 5250, pero no en el listado.
+                print(f"VOLVER pantalla: estado={estado} no_ibm=False", flush=True)
+                raise pf.Halt(f"volver: no se llego al listado (estado {estado})")
+    raise pf.Halt("volver: el remoto sigue en el navegador tras varios Alt+Tab")
 
 
 async def avanza(s, hwnd: int) -> dict:

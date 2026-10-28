@@ -353,13 +353,20 @@ async def ir_al_5250(s, hwnd: int, intentos: int = 4) -> bool:
     Medido el 28/10: tras pegar en la hoja el remoto se queda en Chrome y
     todo lo demas (ESC, F3, F12, la secuencia del operador) no hace nada,
     porque las teclas van al navegador y no al 5250.
+
+    Ademas el remoto tarda 1-3 s en procesar el Alt+Tab, asi que despues de
+    enviarlo se sondea la pantalla en vez de esperar un tiempo fijo.
     """
     for i in range(intentos):
         img, _ = captura(hwnd)
         if en_ibm(clasificar(img, usar_jev=False)):
             return True
         await pf.step(s, f"alt_tab_ibm_{i}", "press_keys", {"keys": ["alt", "tab"]})
-        await asyncio.sleep(1.3)
+        for _ in range(3):
+            await asyncio.sleep(0.8)
+            img, _ = captura(hwnd)
+            if en_ibm(clasificar(img, usar_jev=False)):
+                return True
     return False
 
 
