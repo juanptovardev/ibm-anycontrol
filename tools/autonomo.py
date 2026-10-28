@@ -228,7 +228,6 @@ async def _pre_vuelo_intento(s, hwnd: int, intento: int) -> bool:
     suman ~2 min de reintentos antes de rendirse. Es el precio de que un fallo
     puntual no tumbe el lote; no se anaden mas capas de reintento.
     """
-    """Un intento del pre-vuelo. True = el remoto ya esta en el formulario."""
     raiz = vigia.raiz(hwnd)
     dlg = vigia.dialogo(raiz)
     if dlg:

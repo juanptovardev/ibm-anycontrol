@@ -11,11 +11,16 @@ que usa el codigo de produccion:
     cabecera     : parte1;parte2;ficha
     ficha        : celda C, entre comillas solo si hace falta (QUOTE_MINIMAL)
 
+La escritura es ATOMICA: se escribe en un temporal y se reemplaza con
+`os.replace`. Si el write se corta a mitad (disco lleno, Ctrl+C), la lista de
+direcciones del operador no queda corrupta.
+
 Uso:
     python tools/regenerar_direcciones.py            # limpia la columna ficha
     python tools/regenerar_direcciones.py --listar    # solo muestra
 """
 import csv
+import os
 import sys
 from pathlib import Path
 
@@ -24,24 +29,41 @@ RUTA = RAIZ / "datos" / "direcciones.csv"
 CAMPOS = ["parte1", "parte2", "ficha"]
 
 
-def leer():
-    if not RUTA.exists():
+def leer(ruta: Path = RUTA):
+    if not ruta.exists():
         return []
-    with open(RUTA, encoding="utf-8-sig", newline="") as fh:
+    with open(ruta, encoding="utf-8-sig", newline="") as fh:
         return list(csv.DictReader(fh, delimiter=";"))
 
 
-def escribir(filas):
-    with open(RUTA, "w", encoding="utf-8-sig", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=CAMPOS, delimiter=";",
-                           quoting=csv.QUOTE_MINIMAL)
-        w.writeheader()
-        for f in filas:
-            w.writerow({c: f.get(c, "") or "" for c in CAMPOS})
+def escribir(filas, ruta: Path = RUTA):
+    """Escribe atomico: temporal + os.replace (atomico en Windows)."""
+    tmp = ruta.with_suffix(ruta.suffix + ".tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8-sig", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=CAMPOS, delimiter=";",
+                               quoting=csv.QUOTE_MINIMAL)
+            w.writeheader()
+            for f in filas:
+                w.writerow({c: f.get(c, "") or "" for c in CAMPOS})
+        os.replace(tmp, ruta)
+    except BaseException:
+        # Si algo falla, el temporal no se queda tirado y el original queda
+        # intacto: el `replace` nunca llego a ocurrir.
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
 def main(argv):
     listar = "--listar" in argv
+    if not RUTA.exists():
+        # Sin archivo de entrada no se inventa uno: un CSV fantasma con solo
+        # cabecera seria leido por `lee_direcciones` como "0 direcciones".
+        print(f"falta {RUTA}", file=sys.stderr)
+        return 1
     filas = leer()
     if listar:
         for f in filas:
@@ -56,6 +78,8 @@ def main(argv):
     try:
         escribir(limpias)
     except PermissionError:
+        # Cubre tanto el open del temporal como el os.replace: con Excel
+        # abierto, Windows deniega el reemplazo (WinError 5).
         print("ERROR: el archivo esta abierto en Excel. Cierralo y vuelve a intentarlo.",
               file=sys.stderr)
         return 2
