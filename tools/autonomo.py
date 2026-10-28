@@ -287,7 +287,16 @@ async def por_direccion(s, hwnd: int, filas: list, dry: bool) -> list:
     for f in filas:
         id_ = f.get("id")
         print(f"\n=== {id_}: {f.get('direccion_parte1')} / {f.get('direccion_parte2')} ===")
-        res = await L.procesa(f, hwnd, s, dry)
+        # Reanudacion: si el ultimo estado del ledger es 'en_curso', se sigue
+        # desde la pagina siguiente a la ya pegada (no se repite lo pegado).
+        prev = L.ledger_leido().get(f.get("id", ""), {})
+        desde = 0
+        if prev.get("estado") == "en_curso":
+            try:
+                desde = int(prev.get("paginas_vistas") or 0)
+            except (TypeError, ValueError):
+                desde = 0
+        res = await L.procesa(f, hwnd, s, dry, desde_pagina=desde)
         # B6/B7: el resultado se persiste en el ledger ANTES de seguir. Sin esto
         # el resumen y el dossier releen datos viejos y una re-corrida puede
         # duplicar pegadas.

@@ -24,7 +24,7 @@ class TestPorDireccionPersiste(unittest.TestCase):
     def test_cada_resultado_se_escribe_en_el_ledger(self):
         escritas = []
 
-        async def fake_procesa(fila, hwnd, s, dry=False):
+        async def fake_procesa(fila, hwnd, s, dry=False, desde_pagina=0):
             return {"id": fila["id"], "estado": "ok", "paginas_vistas": 2,
                     "filas_copiadas": 30, "notas": "2 bloques x 15 filas",
                     "hora_inicio": "10:00:00", "hora_fin": "",
@@ -42,6 +42,7 @@ class TestPorDireccionPersiste(unittest.TestCase):
         with patch.object(L, "procesa", fake_procesa), \
              patch.object(L, "ledger_escribe", fake_ledger), \
              patch.object(L, "entrar_formulario", fake_entrar), \
+             patch.object(L, "ledger_leido", lambda: {}), \
              patch.object(autonomo, "traza_segura", lambda *a, **k: None):
             res = asyncio.run(autonomo.por_direccion(None, 1, filas, False))
 
@@ -51,7 +52,7 @@ class TestPorDireccionPersiste(unittest.TestCase):
         self.assertEqual(len(res), 2)
 
     def test_en_dry_no_se_escribe_el_ledger(self):
-        async def fake_procesa(fila, hwnd, s, dry=False):
+        async def fake_procesa(fila, hwnd, s, dry=False, desde_pagina=0):
             return {"id": fila["id"], "estado": "ok"}
 
         async def fake_entrar(s, hwnd):
@@ -61,6 +62,7 @@ class TestPorDireccionPersiste(unittest.TestCase):
              patch.object(L, "ledger_escribe",
                           lambda f: self.fail("en dry no se escribe el ledger")), \
              patch.object(L, "entrar_formulario", fake_entrar), \
+             patch.object(L, "ledger_leido", lambda: {}), \
              patch.object(autonomo, "traza_segura", lambda *a, **k: None):
             asyncio.run(autonomo.por_direccion(None, 1, [{"id": "D01"}], True))
 
@@ -93,6 +95,7 @@ class TestMotivoEnNotas(unittest.TestCase):
 
         with patch.object(L, "reconecta_si_hace_falta", lambda h: True), \
              patch.object(L, "entrar_formulario", fake_entrar), \
+             patch.object(L, "ledger_leido", lambda: {}), \
              patch.object(L, "captura", lambda h: (None, None)), \
              patch.object(L, "clasificar",
                           lambda img, usar_jev=False: {

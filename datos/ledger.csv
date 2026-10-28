@@ -36,3 +36,7 @@ D02,CR 103D,86-55,BOG,,error,0,0,15:59:33,15:59:54,,B3 estado desconectado,0
 D03,CL 131C,126-72,BOG,,error,0,0,15:59:54,16:00:07,,B1 pantalla None,0
 D02,CR 103D,86-55,BOG,,error,0,0,16:02:55,16:03:20,,halt: volver: no se llego al listado (estado None),0
 D03,CL 131C,126-72,BOG,,error,0,0,16:03:31,16:04:03,,halt: volver: no se llego al listado (estado None),0
+D02,CR 103D,86-55,BOG,,error,0,0,16:05:07,16:05:35,,mensajes de programa: QeettoSi Savas s 2 | Visualizar Mensajes de Programa | La llamada al programa TCCEDFRO finalizé con error (C GS DF). | c | El destino de una operacién numérica es demasiado pequefio para contener el r | c | La llamada al programa TCCEDFRO finalizé con error (C G § DF). | c | El destino de una operac; B3 estado error,0
+D03,CL 131C,126-72,BOG,,error,0,0,16:05:42,16:06:09,,halt: A1 no se encontro la cabecera Suscript ni sus codigos,0
+D02,,,,,en_curso,1,15,,16:09:12,,registro manual: 1 pagina(s) ya pegadas en la hoja (corridas 16:04 y 16:06 del 28/10); reanudar en la 2,
+D03,,,,,en_curso,1,15,,16:09:12,,registro manual: 1 pagina(s) ya pegadas en la hoja (corridas 16:04 y 16:06 del 28/10); reanudar en la 2,

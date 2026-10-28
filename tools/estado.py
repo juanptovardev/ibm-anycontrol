@@ -173,7 +173,12 @@ def ocr_completo(img: Image.Image) -> tuple[str, list[tuple]]:
     Returns:
         (texto, words) con words = [(texto, x, y, ancho, alto)].
     """
-    d = pytesseract.image_to_data(img.convert("L"), config="--psm 6",
+    # Se OCR de la imagen EN COLOR, no en gris: el listado del 5250 es texto
+    # verde sobre fondo negro y en gris la cabecera "Suscript" se pierde
+    # (medido 28/10: la captura reutilizada tras AvPag no la traia y el bloque
+    # abortaba con "A1 no se encontro la cabecera Suscript"). click_sel._words
+    # ya usaba color y era la ruta que si encontraba la cabecera.
+    d = pytesseract.image_to_data(img, config="--psm 6",
                                   output_type=pytesseract.Output.DICT)
     lineas: dict[tuple, list[str]] = {}
     words: list[tuple] = []

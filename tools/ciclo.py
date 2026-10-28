@@ -57,6 +57,12 @@ async def extrae(s, hwnd: int, dry: bool = False, bajar: bool = True,
         texto, words = ocr_completo(img)
     t = target_celda(words)
     if not t:
+        # La captura reutilizada puede venir de un OCR que no vio la cabecera
+        # (medido 28/10: en gris la cabecera "Suscript" se pierde). Se reintenta
+        # con la ruta en color que usa click_sel._words.
+        from click_sel import _words
+        t = target_celda(_words(img))
+    if not t:
         raise pf.Halt("A1 no se encontro la cabecera Suscript ni sus codigos")
     print(f"A1 clic en x={t['x']} y={t['y']} (col {t['col_left']}..{t['col_right']}, "
           f"ultima fila {t['fila_top']}, barra {t['barra']}, "

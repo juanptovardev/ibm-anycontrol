@@ -458,7 +458,8 @@ async def entrar_formulario(s, hwnd: int) -> bool:
     return False
 
 
-async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
+async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
+                  desde_pagina: int = 0) -> dict:
     """Un item completo. Nunca lanza: devuelve el resultado para el ledger."""
     inicio = time.time()
     id_ = fila.get("id", "")
@@ -527,7 +528,9 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
                                             "fin_libro", "mensajes"})
             traza.evento("estado", st["estado"] or "desconocido",
                          detalle=f"{id_} tras F10 conf {st.get('confianza')}")
+            venue_mensajes = False
             if st["estado"] == "mensajes":
+                venue_mensajes = True
                 # El 5250 abre 'Visualizar Mensajes de Programa' cuando un
                 # programa falla o no encuentra el dato (medido el 28/10 con
                 # D02). Se sale con Intro y el aviso queda escrito en pantalla:
@@ -550,7 +553,8 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
                 st = await espera_estado(hwnd, {"cuenta_matriz",
                                                 "sin_coincidencia", "error",
                                                 "fin_libro"})
-            if st["estado"] in ("sin_coincidencia", "formulario"):
+            if st["estado"] in ("sin_coincidencia", "formulario") or (
+                    venue_mensajes and st["estado"] == "error"):
                 # 'formulario' aqui significa que la busqueda no arranco el
                 # listado: el aviso del 5250 nos devolvio al formulario.
                 traza.evento("buscar", "sin_coincidencia", detalle=id_)
@@ -584,8 +588,23 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
                 if aviso_ficha:
                     print(f"  aviso: {aviso_ficha}", flush=True)
 
+            # Reanudacion: si el ledger dice que ya se pegaron N paginas de esta
+            # direccion, se avanzan N paginas con AvPag antes de extraer. La
+            # licencia gratuita de AnyDesk corta la sesion a los pocos minutos
+            # y sin esto cada corte obligaria a repetir (y duplicar) lo pegado.
+            if desde_pagina > 0:
+                print(f"reanudando en la pagina {desde_pagina + 1} "
+                      f"({desde_pagina} ya pegadas)", flush=True)
+                for k in range(desde_pagina):
+                    await pf.step(s, f"resuma_avpag_{k}", "press_keys",
+                                  {"keys": ["pagedown"]})
+                    await asyncio.sleep(1.1)
+                await asyncio.sleep(0.9)
+                pagina.ULTIMA = None
+
             # Bloque por bloque hasta el aviso de fin de archivo.
-            bloques = 0
+            bloques = desde_pagina
+            hechos_hoy = 0
             saltadas = 0
             # La captura de la pagina recien paginada se reutiliza: no se paga
             # otra vez el OCR de una pantalla que ya se leyo (pagina.avanza la
@@ -600,7 +619,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
                 # Las 7 bajadas solo en el PRIMER bloque que se extrae: si las
                 # primeras paginas venian sin suscriptores y se saltaron, el
                 # cursor del 5250 sigue sin moverse de su punto.
-                extra = await ciclo.extrae(s, hwnd, dry, bajar=(bloques == 0),
+                extra = await ciclo.extrae(s, hwnd, dry, bajar=(hechos_hoy == 0),
                                            previo=pagina.ULTIMA)
                 if extra == "vacia":
                     # La pagina existe pero la columna Suscript viene vacia: no
@@ -623,6 +642,19 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
                         return res
                     continue
                 bloques += 1
+                hechos_hoy += 1
+                # B6 por pagina: lo pegado se registra YA. Si AnyDesk corta la
+                # sesion en la pagina siguiente, el ledger dice cuantas
+                # quedaron pegadas y la corrida reanuda ahi en vez de repetir.
+                if not dry:
+                    parcial = {k: res.get(k, "") for k in CAMPOS_LEDGER}
+                    parcial["estado"] = "en_curso"
+                    parcial["paginas_vistas"] = bloques
+                    parcial["filas_copiadas"] = bloques * FILAS_POR_BLOQUE
+                    parcial["hora_fin"] = time.strftime("%H:%M:%S")
+                    parcial["notas"] = (f"pagina {n} pegada; reanudar en la "
+                                        f"{bloques + 1}")
+                    ledger_escribe(parcial)
                 traza.evento("extraer", "ok", detalle=f"{id_} bloque {n}")
                 if dry:
                     break
