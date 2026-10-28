@@ -74,5 +74,40 @@ class TestMergeEnDry(unittest.TestCase):
         self.assertEqual(hechos["D01"]["filas_copiadas"], 30)
 
 
+class TestLedgerEnDry(unittest.IsolatedAsyncioTestCase):
+    """Control positivo: en REAL se escribe el ledger, en DRY no.
+
+    Sin este control, la asercion "en dry no se escribe" podria pasar por
+    vacio (si el camino real tampoco escribiera nunca).
+    """
+
+    async def _por_direccion(self, dry):
+        fila = {"id": "D01", "direccion_parte1": "CR 17B",
+                "direccion_parte2": "175-77"}
+        resultado = {"id": "D01", "estado": "ok", "paginas_vistas": 1,
+                     "filas_copiadas": 15}
+
+        async def procesa(f, hwnd, s, dry=False, desde_pagina=0, solo_ficha=False):
+            return resultado
+
+        async def entrar(s, hwnd):
+            return True
+
+        with patch.object(autonomo.L, "procesa", procesa), \
+                patch.object(autonomo.L, "entrar_formulario", entrar), \
+                patch.object(autonomo.L, "ledger_en_curso", return_value={}), \
+                patch.object(autonomo.L, "ledger_escribe") as escribe:
+            await autonomo.por_direccion(object(), 123, [fila], dry)
+        return escribe
+
+    async def test_en_real_se_escribe_el_ledger(self):
+        escribe = await self._por_direccion(dry=False)
+        escribe.assert_called_once()
+
+    async def test_en_dry_no_se_escribe_el_ledger(self):
+        escribe = await self._por_direccion(dry=True)
+        escribe.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

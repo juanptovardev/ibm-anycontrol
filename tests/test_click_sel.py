@@ -63,5 +63,35 @@ class TestTargetCelda(unittest.TestCase):
         self.assertGreaterEqual(t["x"], 860)
 
 
+class TestCabeceraExterna(unittest.TestCase):
+    """Cabecera recuperada por otra via (OCR en modo disperso, psm 11).
+
+    Medido el 28/10: el OCR de pantalla completa pierde la fila de cabecera en
+    algunas capturas; la cabecera llega aparte y los datos siguen saliendo del
+    OCR normal.
+    """
+
+    def test_cabecera_externa_resuelve_el_objetivo(self):
+        # Sin cabecera en las palabras: solo el codigo de la fila de datos.
+        words = _fila(120, "50867551")
+        self.assertIsNone(click_sel.target_celda(words))
+        t = click_sel.target_celda(words, cabecera=CAB)
+        self.assertIsNotNone(t)
+        self.assertEqual(t["col_left"], 860)
+        self.assertEqual(t["col_right"], 920)
+        self.assertEqual(t["x"], 913)
+        self.assertEqual(t["y"], 126)      # la fila de datos, no la cabecera
+        self.assertEqual(t["suscriptores"], 1)
+
+    def test_sin_cabecera_y_sin_fallback_devuelve_none(self):
+        self.assertIsNone(click_sel.target_celda(_fila(120, "50867551")))
+
+    def test_la_cabecera_externa_no_sirve_de_fila_de_datos(self):
+        words = [CAB] + _fila(120, "50867551")
+        t = click_sel.target_celda(words, cabecera=CAB)
+        self.assertEqual(t["y"], 126)
+        self.assertLess(t["y"], 130)
+
+
 if __name__ == "__main__":
     unittest.main()

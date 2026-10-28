@@ -26,7 +26,7 @@ import sys
 
 import cp
 import preflight_auto as pf
-from click_sel import pagina_vacia, target_celda
+from click_sel import pagina_vacia, target_celda_fallback
 from estado import ocr_completo
 
 
@@ -55,26 +55,7 @@ async def extrae(s, hwnd: int, dry: bool = False, bajar: bool = True,
     else:
         img = pf.shot(hwnd, "ciclo-antes")
         texto, words = ocr_completo(img)
-    t = target_celda(words)
-    if not t:
-        # La captura reutilizada puede venir de un OCR que no vio la cabecera
-        # (medido 28/10: en gris la cabecera "Suscript" se pierde). Se reintenta
-        # con la ruta en color que usa click_sel._words.
-        from click_sel import _words
-        t = target_celda(_words(img))
-    if not t:
-        # Ultimo recurso: la cabecera recuperada en modo texto DISPERSO. El
-        # analisis de maquetacion de Tesseract en pantalla completa tira la
-        # fila de cabecera en algunas capturas (pixel a pixel identicas a
-        # otras que si la leen); en psm 11 aparece siempre. Los datos siguen
-        # saliendo del OCR de pantalla completa.
-        from click_sel import _words_sparse
-        cab = [w for w in _words_sparse(img) if w[0].strip("_-.,:;").upper().startswith(("SUS", "SUC"))]
-        if cab:
-            t = target_celda(words, cabecera=cab[0])
-            if t:
-                print(f"A1 cabecera recuperada en modo disperso: {cab[0][0]!r} "
-                      f"x={cab[0][1]} y={cab[0][2]}", flush=True)
+    t = target_celda_fallback(img, words)
     if not t:
         raise pf.Halt("A1 no se encontro la cabecera Suscript ni sus codigos")
     print(f"A1 clic en x={t['x']} y={t['y']} (col {t['col_left']}..{t['col_right']}, "

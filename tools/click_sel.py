@@ -32,30 +32,16 @@ _DATA_TOP_PAD = 6        # px por debajo de la cabecera empiezan los datos
 _EXTRA_CHARS = 0        # celdas extra (0 = la seleccion del clic ya es la buena)
 
 
-def _words(img) -> list[tuple[str, int, int, int, int]]:
-    """Palabras del listado con su caja: [(texto, x, y, ancho, alto)]."""
-    d = pytesseract.image_to_data(img, config="--psm 6",
-                                  output_type=pytesseract.Output.DICT)
-    out = []
-    for i, texto in enumerate(d["text"]):
-        texto = (texto or "").strip()
-        if not texto:
-            continue
-        out.append((texto, d["left"][i], d["top"][i], d["width"][i], d["height"][i]))
-    return out
+def _words(img, psm: int = 6) -> list[tuple[str, int, int, int, int]]:
+    """Palabras del listado con su caja: [(texto, x, y, ancho, alto)].
 
-
-def _words_sparse(img) -> list[tuple[str, int, int, int, int]]:
-    """Palabras del listado en modo texto DISPERSO (psm 11).
-
-    Medido el 28/10: el OCR de pantalla completa (psm 6) pierde la fila de
-    cabecera del listado (Direccion | Apto | ... | Suscript | Est) en algunas
-    capturas, aunque la imagen sea identica pixel a pixel a otra que si la lee:
-    es el analisis de maquetacion de Tesseract, no la imagen ni el color. En
-    modo disperso la cabecera SI aparece, y con las mismas coordenadas
-    (Suscript@849,196). Por eso se usa como fallback de la cabecera.
+    `psm` decide como Tesseract maqueta la pagina:
+      - 6 (bloque uniforme): lee bien las filas de datos.
+      - 11 (texto disperso): SIEMPRE lee la fila de cabecera, que el modo 6
+        tira en algunas capturas (medido 28/10: imagenes identicas pixel a
+        pixel, unas con cabecera y otras sin ella).
     """
-    d = pytesseract.image_to_data(img, config="--psm 11",
+    d = pytesseract.image_to_data(img, config=f"--psm {psm}",
                                   output_type=pytesseract.Output.DICT)
     out = []
     for i, texto in enumerate(d["text"]):
@@ -133,6 +119,39 @@ def target_celda(words, cabecera=None) -> dict | None:
             "cabecera": (hx, hy, hw, hh)}
 
 
+def target_celda_fallback(img, words=None) -> dict | None:
+    """Objetivo del clic con los intentos de OCR, en orden.
+
+    1. las palabras que ya trae el llamante (OCR de `estado.ocr_completo`);
+    2. un OCR en COLOR de la misma captura: lee mejor el listado verde;
+    3. la cabecera recuperada en modo texto DISPERSO (psm 11).
+
+    El paso 3 existe por una medicion del 28/10: el analisis de maquetacion
+    de Tesseract en pantalla completa tira la fila de cabecera del listado en
+    algunas capturas, aunque la imagen sea identica pixel a pixel a otra que si
+    la lee. En psm 11 la cabecera aparece siempre, con las mismas coordenadas.
+
+    Los datos (codigos, barra, ultima fila) salen siempre del OCR en color.
+    """
+    if words is None:
+        words = _words(img)
+    t = target_celda(words)
+    if t:
+        return t
+    words_color = _words(img)
+    t = target_celda(words_color)
+    if t:
+        return t
+    cab = [w for w in _words(img, psm=11) if _es_cabecera(w[0])]
+    if not cab:
+        return None
+    t = target_celda(words_color, cabecera=cab[0])
+    if t:
+        print(f"A1 cabecera recuperada en modo disperso: {cab[0][0]!r} "
+              f"x={cab[0][1]} y={cab[0][2]}", flush=True)
+    return t
+
+
 # Medido sobre 22 capturas reales del listado: pagina vacia = 0 px verdes;
 # pagina con 1 suscriptor = 237..305 px. El hueco es enorme: umbral seguro.
 _TINTA_VACIA = 40
@@ -194,14 +213,14 @@ async def _seleccionar(s, hwnd: int, dry: bool, force: bool = False) -> tuple:
     await pf.step(s, "bajar_inicio", "press_keys",
                   {"keys": ["down"] * cp.BAJAR_INICIO, "key_delay_ms": cp.KEY_DELAY_MS})
     img = pf.shot(hwnd, "sel-sin-seleccion")
-    t = target_celda(_words(img))
+    t = target_celda_fallback(img)
     if not t:
         # El listado pudo quedar scrolleado por las bajadas previas: se limpia
         # la seleccion y se vuelve a mirar una vez.
         await pf.step(s, "limpiar_sel", "press_keys", {"keys": ["escape"]})
         await asyncio.sleep(0.5)
         img = pf.shot(hwnd, "sel-sin-seleccion-b")
-        t = target_celda(_words(img))
+        t = target_celda_fallback(img)
     if not t:
         raise pf.Halt("A1 no se encontro la cabecera Suscript ni sus codigos")
     print(f"A1 objetivo x={t['x']} y={t['y']} col={t['col_left']}..{t['col_right']} "
