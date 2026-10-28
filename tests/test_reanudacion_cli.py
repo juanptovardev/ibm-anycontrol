@@ -57,6 +57,7 @@ class TestCliReanuda(unittest.TestCase):
 
         with patch.object(L, "lee_direcciones", lambda: filas), \
                 patch.object(L, "ledger_leido", lambda: ledger), \
+                patch.object(L, "ledger_en_curso", lambda: ledger), \
                 patch.object(L, "procesa", fake_procesa), \
                 patch.object(L, "ledger_escribe", lambda res: None), \
                 patch.object(L, "entrar_formulario", fake_entrar_formulario), \

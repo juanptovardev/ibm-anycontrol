@@ -292,7 +292,7 @@ async def por_direccion(s, hwnd: int, filas: list, dry: bool,
         print(f"\n=== {id_}: {f.get('direccion_parte1')} / {f.get('direccion_parte2')} ===")
         # Reanudacion validada por direccion (el id es posicional: si el
         # operador cambia una fila del CSV, el id apunta a otra direccion).
-        desde = L.reanuda_desde(L.ledger_leido(), f)
+        desde = L.reanuda_desde(L.ledger_en_curso(), f)
         res = await L.procesa(f, hwnd, s, dry, desde_pagina=desde, solo_ficha=solo_ficha)
         # B6/B7: el resultado se persiste en el ledger ANTES de seguir. Sin esto
         # el resumen y el dossier releen datos viejos y una re-corrida puede

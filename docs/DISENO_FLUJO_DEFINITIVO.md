@@ -45,7 +45,7 @@ Después de escribir parte1 / parte2 / BOG / TVC, se lee el formulario por OCR y
 |---|---|---|---|
 | `ficha` | el edificio existe | copiar la ficha del portapapeles → columna C del CSV → Shift+F4 | `ok` (sigue a B4) |
 | `cuenta_matriz` | ya estamos en el listado | seguir a B4 | `ok` |
-| `sin_coincidencia` | la dirección no está en el archivo | Escape | `sin_datos` |
+| `sin_coincidencia` | la dirección no está en el archivo | Escape | `no_encontrado` |
 | `mensajes` y tras Intro vuelve al formulario | dirección inválida o inexistente | Intro ×2, Escape | `sin_datos` |
 | `mensajes` y tras Intro sigue en mensajes | aviso encadenado | Intro ×1 más, Escape | `sin_datos` con el aviso en notas |
 | `error` (aviso duro) | teclado inhibido | ESC → F3 → si vuelve al formulario | `sin_datos` |
@@ -129,7 +129,8 @@ Cualquier otra cosa se anota y se sigue.
 | Evidencia | `evidencia/*.png` (ciclo-antes, cp-listo, página) |
 | Dossier | `tools/verifications/autonomo-<ts>.md` |
 
-Estados finales por dirección: `ok` (páginas pegadas), `sin_datos` (no existe / pantalla vacía),
+Estados finales por dirección: `ok` (páginas pegadas), `no_encontrado` (la dirección no está en
+el archivo del 5250), `sin_datos` (pantalla sin contenido: se deja vacía y se sigue),
 `revisar` (no se pudo resolver), `en_curso` (corte a media matriz, reanudable).
 
 ## 5. Los 5 registros actuales

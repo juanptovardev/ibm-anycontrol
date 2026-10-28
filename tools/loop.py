@@ -207,6 +207,25 @@ def ledger_leido(ruta: Path = LEDGER) -> dict:
     return {f["id"]: f for f in filas}
 
 
+def ledger_en_curso(ruta: Path = LEDGER) -> dict:
+    """id -> ULTIMA fila 'en_curso' del ledger (punto real de reanudacion).
+
+    El ledger es append-only y, cuando una direccion se corta a media matriz,
+    despues de las filas 'en_curso' se escribe una 'error'. La ultima fila del
+    id no sirve para reanudar: hay que buscar la ultima 'en_curso' de esa
+    direccion, o el relanzamiento repetiria las paginas ya pegadas.
+    """
+    if not ruta.exists():
+        return {}
+    with open(ruta, encoding="utf-8-sig", newline="") as fh:
+        filas = list(csv.DictReader(fh))
+    ultimo = {}
+    for f in filas:
+        if f.get("estado") == "en_curso":
+            ultimo[f.get("id")] = f
+    return ultimo
+
+
 def ledger_escribe(fila: dict, ruta: Path = LEDGER) -> None:
     """Anade (o reemplaza) una fila del ledger. Append-only por item."""
     ruta.parent.mkdir(parents=True, exist_ok=True)
@@ -249,7 +268,9 @@ def anydesk_vivo(hwnd: int) -> bool:
         if not win32gui.IsWindow(raiz) or not win32gui.IsWindowVisible(raiz):
             return False
         return not vigia.dialogo(raiz)
-    except Exception:
+    except Exception:  # noqa: BLE001 - sondear ventanas Win32 puede fallar
+        # (ventana cerrada a mitad, pywin32 ausente): sin ventana no hay sesion
+        # viva, y este guard nunca debe tumbar el item.
         return False
 
 
@@ -267,13 +288,25 @@ def merge_fichas_pendientes() -> int:
     except (OSError, csv.Error, UnicodeDecodeError):
         return 0
     recuperadas = 0
+    fallidas = []
     for r in filas:
         if len(r) < 2:
             continue
         if escribe_ficha(r[0].strip(), r[1].strip()) == "":
             recuperadas += 1
-    if recuperadas:
-        PENDIENTES.unlink(missing_ok=True)
+        else:
+            fallidas.append(r)
+    # El respaldo se borra SOLO si se recuperaron todas. Si alguna fallo, se
+    # reescribe con las fallidas: escribe_ficha ya las re-appendo al mismo
+    # archivo, asi que reescribir evita que se dupliquen en cada corrida.
+    try:
+        if fallidas:
+            with open(PENDIENTES, "w", encoding="utf-8", newline="") as f:
+                csv.writer(f, delimiter=";").writerows(fallidas)
+        else:
+            PENDIENTES.unlink(missing_ok=True)
+    except OSError:
+        pass
     return recuperadas
 
 
@@ -309,11 +342,6 @@ async def buscar(s, hwnd: int, det: list, parte1: str, parte2: str) -> None:
     await pf.step(s, "bog", "write_to_anydesk", {"command": "BOG"})
     await pf.step(s, "plus3", "press_keys", {"keys": ["add"]})
     await pf.step(s, "tvc", "write_to_anydesk", {"command": "TVC"})
-    # Observabilidad: se lee el formulario ANTES de F10. Este emulador no
-    # borra, asi que un residuo en No.Casa o Comunidad solo se descubre por el
-    # error del programa, sin decir que campo estaba sucio.
-    img_f, _vp_f, _det_f = rowdet.detect(hwnd)
-    print(f"FORMULARIO antes de F10: {ocr_text(img_f)[:400]}", flush=True)
 
 
 async def verifica_texto(hwnd: int) -> tuple[bool, str]:
@@ -324,6 +352,10 @@ async def verifica_texto(hwnd: int) -> tuple[bool, str]:
     campo). Si Calle tiene tinta, la escritura llego donde tenia que llegar.
     """
     img, _vp, det = rowdet.detect(hwnd)
+    # Observabilidad: se lee el formulario ANTES de F10 (un residuo en No.Casa
+    # o Comunidad solo se descubriria por el error del programa). Se reutiliza
+    # la captura de la verificacion, sin pagar un detect extra.
+    print(f"FORMULARIO antes de F10: {ocr_text(img)[:400]}", flush=True)
     if len(det) < 3:
         return False, "no se detectaron filas del formulario"
     tinta_calle = pf.ink(img, det[CALLE])
@@ -625,9 +657,10 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                 # es dejarla vacia y seguir; pero un corte de licencia tambien
                 # se ve negro, asi que primero se descarta que la sesion viva.
                 if not anydesk_vivo(hwnd):
-                    reconecta_si_hace_falta(hwnd)
+                    ok_rec = reconecta_si_hace_falta(hwnd)
                     await login_si_hace_falta(s, hwnd)
-                    traza.evento("reconectar", "ok", detalle=f"{id_} pantalla negra")
+                    traza.evento("reconectar", "ok" if ok_rec else "fallo",
+                                 detalle=f"{id_} pantalla negra")
                     res.update(estado="revisar",
                                notas=(res.get("notas", "") + "; " if res.get("notas") else "")
                                + "pantalla negra con AnyDesk caido: se reconecto, "
@@ -832,7 +865,7 @@ async def main(hwnd: int, solo_id: str | None, dry: bool = False,
         fallos_reencuadre = 0
         for f in pendientes:
             # Reanudacion validada por direccion (el id es posicional).
-            desde = reanuda_desde(hechos, f)
+            desde = reanuda_desde(ledger_en_curso(), f)
             res = await procesa(f, hwnd, s, dry, desde_pagina=desde, solo_ficha=solo_ficha)
             res["hora_fin"] = time.strftime("%H:%M:%S")
             if not dry:
