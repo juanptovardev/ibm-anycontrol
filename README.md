@@ -41,7 +41,7 @@ $REPO = "C:\Users\juanp_8h8f07l\dev\matriz-ibm-agent"
 & $PY "$REPO\tools\flow.py"     <hwnd>     # macro 5250 (clic, flechas, +, F10, Shift+F4)
 & $PY "$REPO\tools\paginar.py"  <hwnd> 10  # recorrer el libro con AvPág
 & $PY "$REPO\tools\loop.py"     <hwnd>     # ciclo por dirección (lee datos/datos.csv)
-& $PY -m unittest discover -s "$REPO\tests" -v         # 54 tests (stdlib, sin pytest)
+& $PY -m unittest discover -s "$REPO\tests" -v         # 105 tests (stdlib, sin pytest)
 ```
 
 ## Contratos congelados

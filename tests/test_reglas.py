@@ -167,3 +167,30 @@ class TestDesconectado(unittest.TestCase):
         # sesion se haya cortado: la senal es la frase del dialogo.
         texto = "CONSULTA UNIDADES CUENTA MATRIZ\nSuscribirse a la version completa"
         self.assertNotEqual(estado.reglas(texto)["estado"], "desconectado")
+
+    def test_dialogo_con_ocr_que_confunde_la_o_acentuada(self):
+        # Texto EXACTO devuelto por el OCR real del dialogo de AnyDesk:
+        # Tesseract lee 'o' acentuada como '6' y como caracter de reemplazo.
+        texto = ("Conexi6n finalizada\n\nLa conexi6n de red se cerr� debido "
+                 "a la limitaci6n de la licencia\nCompruebe nuestros planes "
+                 "profesionales y para empresas para\nsuscribirse y obtener la "
+                 "versi6n completa sin limitaci6n de tiempo.\n")
+        r = estado.reglas(texto)
+        self.assertEqual(r["estado"], "desconectado")
+        self.assertTrue(r["senales"]["desconectado"])
+
+    def test_remoto_apagado_es_otra_causa_que_la_licencia(self):
+        # Texto EXACTO del cliente cuando el PC remoto no responde.
+        texto = ("No se puede acceder al ordenador\n\nActualmente no se puede "
+                 "acceder a este puesto de trabajo.\n\nPor favor, verifica que el "
+                 "ordenador est� encendido, conectado a\ninternet y que "
+                 "AnyDesk est� abierto.\n")
+        r = estado.reglas(texto)
+        self.assertEqual(r["estado"], "desconectado")
+        self.assertIn("remoto inaccesible", r["error"])
+
+    def test_corte_por_licencia_no_dice_remoto_apagado(self):
+        texto = "Conexi6n finalizada\nlimitaci6n de la licencia"
+        r = estado.reglas(texto)
+        self.assertEqual(r["estado"], "desconectado")
+        self.assertNotIn("remoto inaccesible", r["error"])

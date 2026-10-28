@@ -76,8 +76,21 @@ RE_FIN = re.compile(
 # los botones Suscribirse / Repetir / OK). No es un error del 5250: se puede
 # reconectar y seguir.
 RE_DESCONECTADO = re.compile(
-    r"CONEXION\s+FINALIZADA|LIMITACION\s+DE\s+LA\s+LICENCIA|"
-    r"NO\s+SE\s+PUEDE\s+CONECTAR",
+    # Tesseract lee la 'o' acentuada del dialogo de AnyDesk como '6':
+    # "Conexi6n finalizada", "limitaci6n de la licencia". Se acepta ambas.
+    r"FINALIZADA|CONEXI[O6]N\s+FINALIZADA|LIMITACI[O6]N\s+DE\s+LA\s+LICENCIA|"
+    r"NO\s+SE\s+PUEDE\s+(CONECTAR|ACCEDER)|SIN\s+LIMITACI[O6]N|"
+    r"NO\s+SE\s+PUEDE\s+ACCEDER\s+A\s+ESTE\s+PUESTO",
+    re.IGNORECASE,
+)
+
+# Distinto corte: el cliente no alcanza al PC remoto (AnyDesk del remoto apagado
+# o el equipo sin red). Se separa del corte por licencia porque la accion es
+# distinta: licencia -> reconectar con el boton Repetir; remoto apagado -> no
+# hay nada que reconectar, hay que encender AnyDesk en el PC de la oficina.
+RE_REMOTO_APAGADO = re.compile(
+    r"NO\s+SE\s+PUEDE\s+ACCEDER|PUESTO\s+DE\s+TRABAJO|"
+    r"VERIFICA\s+QUE\s+EL\s+ORDENADOR\s+EST[A6]",
     re.IGNORECASE,
 )
 
@@ -177,8 +190,11 @@ def reglas(texto: str) -> dict:
                 "senales": senales, "error": "pantalla no IBM (navegador/hoja)"}
     # El corte de licencia tapa la pantalla: no hay nada que leer ni teclear.
     if senales["desconectado"]:
+        causa = ("remoto inaccesible (AnyDesk del PC remoto apagado)"
+                 if RE_REMOTO_APAGADO.search(normaliza(texto))
+                 else "sesion AnyDesk cortada (licencia)")
         return {"estado": "desconectado", "fuente": "regla", "confianza": 0.95,
-                "senales": senales, "error": "sesion AnyDesk cortada (licencia)"}
+                "senales": senales, "error": causa}
     if senales["aviso"]:
         return {"estado": "error", "fuente": "regla", "confianza": 1.0, "senales": senales}
     # Fin de archivo gana sobre 'cuenta_matriz': el listado sigue en pantalla,

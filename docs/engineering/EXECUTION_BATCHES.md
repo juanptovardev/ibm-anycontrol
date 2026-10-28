@@ -41,7 +41,7 @@ completa (solo el viewport del hijo); no tocar la sesión remota sin aprobación
 
 **Criterios de aceptación ejecutables**
 ```
-python -m pytest tests/test_window_manager_click.py -q   -> 12/12
+python -m unittest discover -s tests -p "test_window_manager_click.py"  -> 12/12
 python test_mcp_smoke.py                                   -> SMOKE OK, 22 tools
 ```
 
@@ -63,7 +63,7 @@ reglas deterministas; Jev solo como desempate.
 
 **Criterios de aceptación ejecutables**
 ```
-python -m pytest tests -q        -> 54/54
+python -m unittest discover -s tests   -> todas verdes
 python tools/estado.py <hwnd>    -> JSON con estado/fuente/confianza
 ```
 
@@ -86,7 +86,7 @@ portal web → `estado=None`, confianza 0.32, abort sin teclear.
 
 ---
 
-## T-IBM-03 — pegado en Chrome (PENDIENTE) ← siguiente
+## T-IBM-03 — pegado en Chrome (CERRADO)
 
 **Objetivo**: cerrar el ciclo completo: leer el listado, pegar las filas en la
 hoja de Google Sheets y verificar el pegado.
@@ -112,13 +112,88 @@ hoja de Google Sheets y verificar el pegado.
 
 **Criterios de aceptación ejecutables**
 ```
-python -m pytest tests -q                        -> todas verdes
+python -m unittest discover -s tests                    -> todas verdes
 python tools/pegar.py --columnas <mapa> --dry-run -> imprime plan, escribe 0
 python tools/pegar.py --columnas <mapa>           -> ledger con filas_copiadas = N
 ```
 
 **Verificación post-pegado**: captura 1:1 de la hoja → OCR → los valores pegados
 deben coincidir con las filas del listado (G2: similitud ≥0.90).
+
+---
+
+**Resultado (CERRADO)**: la mecánica definitiva no fue "escribir celda a
+celda" sino **seleccionar con Shift+Clic + portapapeles**:
+`7 abajo → Shift+Clic en la última celda de Suscript → Ctrl+C → Alt+Tab →
+Ctrl+Shift+V → Ctrl+Abajo → Abajo`. Herramientas: `tools/click_sel.py`
+(dónde está la celda), `tools/cp.py` (copiar/pegar/posicionar),
+`tools/ciclo.py` (el bloque completo). Run del piloto: **150 filas pegadas en
+10 páginas** en 2 m 51 s, con `fin_libro` detectado solo. Se descartó la
+premisa de "no usar Ctrl+V": se añadió la tool `paste_clipboard` (Ctrl+V y
+Ctrl+Shift+V) en `mcp-anydesk` v3.7.2 sin relajar la regla de `press_keys`.
+
+---
+
+## T-IBM-04 — versión definitiva: página vacía, velocidad y retorno (CERRADO)
+
+**Objetivo**: que el agente no pegue páginas en blanco, vaya más rápido y
+vuelva al formulario desde el listado sin intervención.
+
+**Alcance permitido**: `dev/matriz-ibm-agent` → `tools/`, `tests/`,
+`ESCALAMIENTO.md`; `dev/mcp-anydesk` → `mcp_anydesk_server/`, `tests/`.
+
+**Criterios de aceptación ejecutables**
+```
+python -m unittest discover -s tests   -> 105/105
+python tools/estado.py <hwnd>           -> estado determinista, sin llamar a Jev
+```
+
+**Resultado**:
+- **Página vacía = no se pega** (B8). Medido sobre 34 capturas reales: la
+  vacía da 0 códigos y 0 px de tinta; las que tienen datos dan ≥1 código y
+  ≥237 px. Con tinta pero sin códigos legibles se pregunta a Jev y solo se
+  salta con conf ≥ 0.6 (fail-safe: nunca se pierde información).
+- **Velocidad**: un OCR por captura (`ocr_completo`), captura de página
+  reutilizada, `clasificar_rapido` (0,6 s), `changed_px` vectorizado, foco al
+  50 ms si la ventana ya está delante. De ~20 s/página a ~6–8 s.
+- **Retorno**: `Escape` + `F12` + `F12` (en `CONSULTA UNIDADES` la única tecla
+  de la barra es `F12=Anterior`, y con el teclado inhibido `F3` no sale).
+- **Cortes de AnyDesk**: dos causas distintas, detectadas por regla y sin
+  gastar Jev (licencia vs remoto apagado).
+
+**Commits**: `80a7c52` (agente), `2872044` (mcp-anydesk v3.7.4).
+
+---
+
+## T-IBM-05 — corrida en vivo de la versión definitiva (PENDIENTE) ← siguiente
+
+**Objetivo**: probar en el PC remoto el ciclo completo con las 5 direcciones de
+`datos/direcciones.csv` y medir el tiempo real por página.
+
+**Precondiciones**
+1. AnyDesk abierto en el PC remoto y **AnyDesk del cliente** sin corte de
+   licencia (la licencia gratuita corta a los ~10 min: es el mayor freno).
+2. Emulador 5250 en el menú principal (el agente entra solo con
+   `1+ENTER+ESC+1+ENTER+1+ENTER`).
+3. Chrome con la pestaña de la hoja (`LIMPIEZA RR`) abierta en el remoto.
+4. `datos/direcciones.csv` con las direcciones reales.
+
+**Prohibiciones**
+- No tocar la pantalla del PC remoto mientras corre (rompe el foco; el guard
+  del server lo detecta y aborta, pero se pierde el item).
+- No arrancar dos `loop.py` a la vez: se pelean por la ventana.
+
+**Criterios de aceptación ejecutables**
+```
+python tools/loop.py <hwnd> --dry   -> busca, clasifica, NO pega, ledger intacto
+python tools/loop.py <hwnd>         -> ledger con 5 filas de estado conocido
+datos/ledger.csv                     -> estado=ok, paginas_vistas y filas_copiadas > 0
+tools/traza.py --json                -> cadena de etapas completa, sin 'detener'
+```
+
+**Medición a entregar**: segundos por página y por dirección, páginas
+vacias saltadas, filas pegadas en la hoja, y cualquier ítem en `error` con su
+motivo exacto.
 
 ---
 

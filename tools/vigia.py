@@ -140,7 +140,19 @@ def reconecta(hwnd_raiz: int, etiqueta: str = "Repetir",
 
     intentos = []
     for estrategia in (clic_fisico, clic_mensaje):
-        clic = estrategia(h)
+        try:
+            clic = estrategia(h)
+        except Exception as exc:
+            # La ventana del boton puede desaparecer entre medias (medido: el clic
+            # fisico cerro el dialogo y el handle quedo invalido -> error 1400).
+            # Eso significa que el dialogo ya no esta: no es un fallo.
+            clic = {"via": estrategia.__name__, "error": str(exc)}
+            if not dialogo(hwnd_raiz):
+                return {"ok": True, "boton": etiqueta, "clic": clic,
+                        "segundos": 0.0,
+                        "intentos": intentos + [estrategia.__name__]}
+            intentos.append(estrategia.__name__ + " (error)")
+            continue
         t0 = time.time()
         while time.time() - t0 < espera:
             if not dialogo(hwnd_raiz):

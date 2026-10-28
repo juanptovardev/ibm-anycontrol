@@ -55,3 +55,52 @@ y verificaciones. Creado: 2026-10-27.
 Creados los documentos de gobernanza: `GUIA_ORQUESTACION_IA.md`,
 `EXECUTION_BATCHES.md`, `ESTADO_ORQUESTACION.md`, `TRACE_FUNCIONES.md` y
 `docs/adr/` (ADR-0001..ADR-0006).
+
+---
+
+## 2026-10-27 — Versión definitiva del motor (T-IBM-03, T-IBM-04)
+
+**Estado**: E0 ampliado. E1 bloqueada por la prueba en vivo del día siguiente.
+
+**Entregado**
+- `tools/ciclo.py` — el bloque de extracción: Shift+Clic en la celda de
+  Suscript, copiar, Alt+Tab, Ctrl+Shift+V, posicionar.
+- `tools/click_sel.py` — localiza la celda destino por OCR y decide si la
+  página tiene suscriptores.
+- `tools/cp.py` — copiar/pegar/posicionar + `sel_box` (medidor de marco).
+- `tools/estado.py` — `ocr_completo` (un OCR por captura), `clasificar_rapido`
+  (franja superior), detección de corte por licencia y de remoto apagado.
+- `tools/pagina.py` — AvPág + reutilización de la captura.
+- `tools/loop.py` — bucle por dirección con `bajar=(bloques == 0)`, retorno con
+  Escape+F12+F12 y salto de páginas vacías.
+- `tools/vigia.py` — reconexión por el botón local **Repetir**, tolerante a un
+  botón que desaparece a mitad.
+- `tools/arranque.py` — arranque en frío.
+- `mcp-anydesk` v3.7.4 — foco al 50 ms si la ventana ya está delante y
+  `focus_and_verify` antes de bajar el modificador del Shift+Clic.
+
+**Commits**: `80a7c52` (agente), `2872044` (mcp-anydesk v3.7.4),
+`ce4d74` (hoja ≠ listado), `6f1a491` (clic único + prompt de arranque).
+
+**Verificado en vivo**
+- Ciclo completo del piloto: **150 filas pegadas en 10 páginas**, `fin_libro`
+  detectado automáticamente, 2 m 51 s.
+- Shift+Clic: x=917 valida; x=912 deja un dígito fuera; x≥922 no selecciona.
+- Página vacía: 0 códigos y 0 px de tinta; con datos, ≥1 código y ≥237 px.
+- Doble clic en el mismo punto = selecciona el campo y **inhibe el teclado**
+  (bug que dejó todas las búsquedas en blanco).
+- `home` en este emulador salta al PRIMER campo, no al inicio del campo.
+
+**Pendiente (mañana)**
+1. Corrida en vivo de la versión definitiva (batch T-IBM-05): 5 direcciones,
+   medición de segundos por página.
+2. Mapa de columnas de la hoja confirmado por escrito.
+3. `Jev` sigue con cuota 429: el gate real son las reglas.
+
+**Riesgos**
+- La licencia gratuita de AnyDesk corta la sesión a los ~10 min: es el mayor
+  freno operativo y no es del agente.
+- El hwnd de la raíz y el del viewport child cambian por sesión → resolver
+  siempre con `window_manager.find_viewport(root)`.
+- `Tesseract` lee la 'o' acentuada como '6' ("conexi6n") → las regex aceptan
+  ambas formas; conviene no bajar el listón al añadir señales nuevas.

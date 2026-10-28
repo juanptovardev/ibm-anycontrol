@@ -22,6 +22,7 @@ Motor: `tools/loop.py` (ciclo por dirección) + `tools/estado.py` (qué pantalla
 | B5 | Máximo 1 reintento por item, con la misma secuencia | `loop.REINTENTOS` | Al segundo fallo se abandona el item |
 | B6 | Todo item deja rastro: fila en `datos/ledger.csv` + captura en `evidencia/` | `loop.ledger_escribe`, `pf.shot` | Bitácora append-only: cada intento es una fila |
 | B7 | Idempotencia: lo que ya está `ok` no se reprocesa | `loop.ledger_leido` | Se puede relanzar la tanda sin duplicar trabajo |
+| B8 | Una página **sin suscriptores** se salta: no se copia, no se pega | `click_sel.pagina_vacia` + `ciclo.extrae` | Vacía = 0 códigos en la columna Suscript + tinta verde < 40. Si hay tinta pero el OCR no ve códigos, se pregunta a Jev y solo se salta con conf ≥ 0.6 |
 
 **Extra (punto donde falló el ciclo manual):** el operador puede tocar la pantalla
 mientras corre el agente. Eso invalida la posición del cursor. Por eso **toda**
@@ -44,18 +45,23 @@ la tanda. No "reintentar más fuerte". (Mismo criterio STOP del protocolo ORCA.)
 
 ---
 
-## 3. Rendimiento medido (por item, 1 página)
+## 3. Rendimiento medido
 
-| Paso | Coste |
-|------|-------|
-| Captura 1:1 (PrintWindow) | ~120 ms |
-| OCR Tesseract (psm 6, x1) | ~150 ms |
-| Clasificación por regla | < 5 ms |
-| Jev (solo si la regla duda) | ~300 ms |
-| Escribir parte1 + parte2 | ~1 s |
-| AvPág + captura + OCR | ~700 ms por página |
+Medido sobre la corrida real `run4` (27/10) y sobre las 34 capturas de
+`evidencia/`. Antes de la versión definitiva: **~20 s por página**.
 
-Estimado: **6–12 s por dirección** (1 página), +1,2 s por página extra del libro.
+| Paso | Antes | Ahora | Cómo se midió |
+|------|-------|-------|---------------|
+| Foco MCP (9 llamadas/página) | 500 ms × 9 = 4,5 s | 50 ms × 9 = 0,45 s | `focus_and_verify` con la ventana ya delante (mcp-anydesk `2872044`) |
+| OCR Tesseract (5 por página) | ~2,3 s × 5 = 12,5 s | ~2,2 s × 1 | `ocr_completo` (texto y words en una pasada) + reutilización de la captura de la página |
+| Clasificación de la franja superior | pantalla completa | ~0,6 s | `clasificar_rapido` recorta 220 px (12/12 capturas correctas) |
+| `changed_px` (diff de píxeles) | ~150 ms (bucle Python) | ~2 ms | `ImageChops.difference` en C |
+| Recorrido completo de una página | ~20 s | **~6–8 s** | suma de lo anterior |
+
+Por dirección (1 página): **~12–18 s**. Cada página extra del libro: +6–8 s.
+
+El ciclo de 10 páginas del piloto (15:40:53 → 15:43:44) tardó 2 m 51 s con la
+versión anterior; con la de hoy se estima en ~1 m 30 s.
 
 ---
 
@@ -70,22 +76,50 @@ Estimado: **6–12 s por dirección** (1 página), +1,2 s por página extra del 
 
 ---
 
-## 5. Pendientes honestos (bloquean la puerta E1)
+## 5. Pendientes honestos
 
-1. **Pegar en Chrome**: falta el contrato de columnas verificado y la mecánica
-   de cambio de ventana (Alt+Tab / coordenadas) con verificación post-pegado.
-2. **Calibración de la columna SUSCRIPTOR**: el fixture viene de un *zoom* de
+### Cerrado en la versión definitiva (27/10, T-IBM-04)
+
+1. ~~Pegar en Chrome~~ → resuelto: la selección con **Shift+Clic** (mecánica
+   aprobada por el operador) + `Alt+Tab` + `Ctrl+Shift+V`. Verificado en vivo:
+   150 filas pegadas en 10 páginas.
+2. ~~Retorno del listado al formulario~~ → resuelto: en `CONSULTA UNIDADES` la
+   única tecla de la barra es `F12=Anterior`; con el teclado inhibido (`A X II`)
+   `F3` no sale. La secuencia correcta es `Escape` + `F12` + `F12`.
+3. ~~Salto a unidades~~ → resuelto: `F10` lleva a la **ficha del edificio** y
+   `Shift+F4` al listado de unidades. El clasificador distingue los tres
+   estados (`formulario` / `ficha` / `cuenta_matriz`).
+
+### Sigue pendiente (bloquean la puerta E1)
+
+4. **Contrato de columnas de la hoja**: verificado en vivo que los suscriptores
+   caen en la columna J (`SUSCRIPTOR`) y la dirección en B; falta el mapa
+   completo y confirmado por escrito.
+5. **Calibración de la columna SUSCRIPTOR**: el fixture viene de un *zoom* de
    captura real; falta OCR directo de la pantalla real a 1:1 (la captura chica
    garblea los dígitos: `soBs7ss1` por `50867551`).
-3. **Salto a unidades**: `Shift+F4` y `f16` sin verificar cuál entra. El
-   clasificador ahora lo detecta (`cuenta_matriz` vs `formulario`), así que la
-   prueba es de un clic.
-4. **Jev**: la cuota free da 429. Hoy el gate real son las reglas; Jev queda
+6. **Jev**: la cuota free da 429. Hoy el gate real son las reglas; Jev queda
    como fallback y como criterio de segunda opinión.
+7. **Prueba en vivo de la versión definitiva**: el PC remoto se apagó a fin de
+   día (corte de licencia de AnyDesk). Falta la corrida completa con las 5
+   direcciones de `datos/direcciones.csv` y la medición del tiempo por página.
 
 ---
 
-## 6. Ponytail — qué NO se construyó (a propósito)
+## 6. Causas de desconexión (dos, no una)
+
+| Síntoma en pantalla | Estado | Acción |
+|--------------------|--------|--------|
+| "Conexión finalizada … limitación de la licencia" | `desconectado` | El botón **Repetir** es local: `tools/vigia.py <hwnd> --repetir` lo pulsa y reconecta (10–30 s) |
+| "No se puede acceder al ordenador / este puesto de trabajo" | `desconectado` | El AnyDesk del PC remoto está apagado: no hay nada que reconectar |
+
+Tesseract lee la 'o' acentuada como '6' ("conexi6n", "limitaci6n"), así que
+las regex aceptan ambas formas y el corte se detecta **por regla**, sin gastar
+una llamada a Jev.
+
+---
+
+## 7. Ponytail — qué NO se construyó (a propósito)
 
 - No hay motor de estados genérico, ni cola, ni workers, ni plugin de visión.
 - No hay retry/backoff: reintenta el bucle, no la red.

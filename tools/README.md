@@ -54,3 +54,40 @@ no se borra: son las mediciones que justifican las recetas).
 | `vigia.py` | Detecta el dialogo de licencia de AnyDesk y pulsa `Repetir` (ventana local, boton buscado por texto). |
 
 Detalle en `docs/engineering/TRAZA_Y_SEMAFORO.md`.
+
+## 5. Ciclo definitivo (aprobado en vivo por el operador)
+
+```
+datos/direcciones.csv          ->  parte1;parte2;ficha   (separador ; de Excel)
+        |
+        v
+loop.procesa  -- B0 reconectar --> B1 estado=formulario --> B2 texto en Calle
+        |                                                          |
+        |  F10 --> ficha del edificio --> Shift+F4 --> CONSULTA UNIDADES
+        v
+ciclo.extrae  ->  7 abajo (solo el 1er bloque)  ->  Shift+Clic en la celda
+                  de Suscript  ->  Ctrl+C  ->  Alt+Tab  ->  Ctrl+Shift+V
+                  ->  Ctrl+Abajo  ->  Abajo
+        |
+        +-- pagina_vacia?  --> AvPag y seguir   (nunca se pega en blanco)
+        |
+        v
+pagina.volver (Alt+Tab a IBM) --> pagina.avanza (AvPag) --> pagina.decide
+        |
+        v
+volver_formulario  ->  Escape + F12 + F12  ->  siguiente direccion
+```
+
+| Archivo | Rol |
+|---|---|
+| `ciclo.py` | Un bloque de extracción completo. Devuelve `"ok"` o `"vacia"`. |
+| `click_sel.py` | `target_celda` (dónde está la celda) + `pagina_vacia` (¿hay suscriptores?). |
+| `cp.py` | `copy_clipboard`, `paste_clipboard(shift=True)`, posicionar, `sel_box`. |
+| `arranque.py` | Arranque en frío desde el menú principal. |
+| `login.py` | Login del 5250 pegando usuario+clave desde el portapapeles local. |
+
+**Coordenadas**: nunca cacheadas. `rows.detect` mide las filas del formulario y
+`click_sel.target_celda` mide la celda en cada captura. El `+` del **bloque
+numérico** (`press_keys ["add"]`) es el avance de campo: el `+` alfanumérico no
+sirve. `delete` no borra y `home` salta al primer campo: para vaciar un campo
+se sobrescribe con espacios desde la posición 0 del campo.
