@@ -4,6 +4,8 @@ El formato lo fija Excel en espanol (separador ';', BOM, CRLF) y lo consume
 `loop.escribe_ficha`. Este test lo fija para que nadie lo rompa al editar a mano.
 """
 import csv
+import io
+import shutil
 import sys
 import tempfile
 import unittest
@@ -18,6 +20,7 @@ import regenerar_direcciones as reg
 class TestFormatoDelCsv(unittest.TestCase):
     def _archivo(self, filas=None):
         tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         ruta = Path(tmp) / "direcciones.csv"
         if filas is None:
             filas = [{"parte1": "CR 17B", "parte2": "175-77", "ficha": ""},
@@ -65,6 +68,38 @@ class TestFormatoDelCsv(unittest.TestCase):
                 codigo = reg.main([])
             self.assertNotEqual(codigo, 0)
             self.assertFalse(ruta.exists())
+
+    def test_cabecera_equivocada_no_borra_nada(self):
+        """Con otra cabecera el archivo se deja INTACTO y se avisa."""
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "direcciones.csv"
+            ruta.write_bytes(
+                b"calle;numero;nota\r\nCR 17B;175-77;algo\r\n")
+            antes = ruta.read_bytes()
+            with patch.object(reg, "RUTA", ruta):
+                codigo = reg.main([])
+            self.assertNotEqual(codigo, 0)
+            self.assertEqual(ruta.read_bytes(), antes,
+                             "el archivo cambio con la cabecera inesperada")
+
+    def test_listar_no_modifica_el_archivo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "direcciones.csv"
+            filas = [{"parte1": "CR 17B", "parte2": "175-77", "ficha": "x"},
+                     {"parte1": "CR 84A", "parte2": "145-94", "ficha": ""}]
+            reg.escribir(filas, ruta)
+            antes = ruta.read_bytes()
+            with patch.object(reg, "RUTA", ruta), \
+                    patch("sys.stdout", new=io.StringIO()) as salida:
+                codigo = reg.main(["--listar"])
+            texto = salida.getvalue()
+            self.assertEqual(codigo, 0)
+            self.assertIn("CR 17B", texto)
+            self.assertIn("175-77", texto)
+            self.assertIn("ficha=SI", texto)
+            self.assertIn("ficha=(vacia)", texto)
+            self.assertEqual(ruta.read_bytes(), antes,
+                             "--listar no debe tocar el archivo")
 
 
 if __name__ == "__main__":

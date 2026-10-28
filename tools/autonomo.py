@@ -181,7 +181,11 @@ def _captura_limpia(hwnd: int, intentos: int = 3, espera: float = 0.9):
     Un frame a medio repintar produce un OCR vacio: si se tomara como verdad,
     el agente creeria que no sabe donde esta y mandaria la secuencia de
     navegacion a ciegas (medido el 28/10: la pantalla era el formulario y se
-    Navigó dos veces sin necesidad).
+    Navig�� dos veces sin necesidad).
+
+    `time.sleep` y no `asyncio.sleep` a proposito: esta funcion es sincrona y
+    se llama desde el propio pre-vuelo; el script es de una sola tarea, asi
+    que bloquear aqui no molesta a nadie.
     """
     img, texto, st = None, "", {}
     for i in range(intentos):
@@ -450,9 +454,15 @@ async def corre(hwnd: int | None, ids: str | None, dry: bool,
             print("STOP: no se pudo dejar la pantalla en el formulario",
                   file=sys.stderr)
             return 1
-        await por_direccion(s, hwnd, pendientes, dry, solo_ficha)
+        resultados = await por_direccion(s, hwnd, pendientes, dry, solo_ficha)
 
     hechos = L.ledger_leido()
+    # En dry el ledger NO se escribe (if not dry en por_direccion): sin esto el
+    # resumen y el dossier releerian el ledger viejo y reportarian que no se
+    # hizo nada, aunque el dry-run si haya recorrido todo.
+    for r in (resultados or []):
+        if r.get("id"):
+            hechos[r["id"]] = r
     print("\n=== RESUMEN ===")
     print(resumen(filas, hechos))
     dossier = escribe_dossier(hwnd, filas, hechos, dry)

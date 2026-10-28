@@ -18,6 +18,11 @@ direcciones del operador no queda corrupta.
 Uso:
     python tools/regenerar_direcciones.py            # limpia la columna ficha
     python tools/regenerar_direcciones.py --listar    # solo muestra
+
+Ojo: este archivo limpia SOLO la columna 3 del CSV de direcciones. NO toca
+`datos/fichas_pendientes.csv` (el respaldo donde caen las fichas cuando Excel
+tiene el CSV abierto): `autonomo.corre` hace merge de ese respaldo al empezar,
+asi que si quieres un arranque de verdad limpio, borra tambien el respaldo.
 """
 import csv
 import os
@@ -57,12 +62,27 @@ def escribir(filas, ruta: Path = RUTA):
         raise
 
 
+def cabecera(ruta: Path = RUTA):
+    """Cabecera real del CSV (lista de columnas, tal cual esta en el archivo)."""
+    with open(ruta, encoding="utf-8-sig", newline="") as fh:
+        return next(csv.reader(fh, delimiter=";"), [])
+
+
 def main(argv):
     listar = "--listar" in argv
     if not RUTA.exists():
         # Sin archivo de entrada no se inventa uno: un CSV fantasma con solo
         # cabecera seria leido por `lee_direcciones` como "0 direcciones".
         print(f"falta {RUTA}", file=sys.stderr)
+        return 1
+    cols = cabecera()
+    normalizadas = {c.strip().lower() for c in cols}
+    if not {"parte1", "parte2"} <= normalizadas:
+        # Sin este guard, un CSV con otra cabecera (p. ej. importado de Excel)
+        # daria f.get("parte1") == None -> "" y se escribirian filas VACIAS:
+        # el operador perderia su lista sin ningun aviso.
+        print(f"ERROR: cabecera inesperada: {cols}. Se esperaba parte1;parte2;ficha",
+              file=sys.stderr)
         return 1
     filas = leer()
     if listar:
