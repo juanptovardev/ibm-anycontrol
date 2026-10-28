@@ -153,9 +153,6 @@ class TestReglas(unittest.TestCase):
         self.assertTrue(r["senales"]["no_ibm"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 class TestDesconectado(unittest.TestCase):
     def test_dialogo_de_licencia_no_es_error_del_5250(self):
         # Dialogo real de AnyDesk (medido): tapa la pantalla remota.
@@ -181,6 +178,26 @@ class TestDesconectado(unittest.TestCase):
         r = estado.reglas(texto)
         self.assertEqual(r["estado"], "desconectado")
         self.assertTrue(r["senales"]["desconectado"])
+
+    def test_mensajes_de_programa_es_un_estado_propio(self):
+        # Pantalla real del 5250 (medido 28/10). Se sale con Intro, no con F3.
+        texto = ("Visualizar Mensajes de Programa\n"
+                 "Trabajo 384142/C46453101/QPADEVOHJS arrancado el 28/10/26\n"
+                 "La llamada al programa TCCEDFRO finalizo con error (C GS DF).\n"
+                 "Teclee respuesta, pulse Intro\nRespuesta 1\nF3=Salir")
+        r = estado.reglas(texto)
+        self.assertEqual(r["estado"], "mensajes")
+        self.assertTrue(r["senales"]["mensajes"])
+
+    def test_mensajes_no_es_un_aviso_duro_generico(self):
+        # 'mensajes' es determinista: no debe caer en el estado 'error' generico
+        # (que se sale con ESC y F3, y en esta pantalla no funcionan).
+        texto = "Visualizar Mensajes de Programa\nTeclee respuesta, pulse Intro"
+        self.assertNotEqual(estado.reglas(texto)["estado"], "error")
+
+
+if __name__ == "__main__":
+    unittest.main()
 
     def test_remoto_apagado_es_otra_causa_que_la_licencia(self):
         # Texto EXACTO del cliente cuando el PC remoto no responde.

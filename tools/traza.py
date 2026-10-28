@@ -39,7 +39,8 @@ RESULTADOS = {
     "entorno": ("ok", "fallo"),
     "pin": ("ok", "fallo"),
     "estado": ("formulario", "ficha", "cuenta_matriz", "fin_libro",
-               "desconectado", "sin_coincidencia", "error", "desconocido"),
+               "desconectado", "sin_coincidencia", "error", "desconocido",
+               "mensajes"),
     "buscar": ("ok", "sin_coincidencia", "fallo"),
     "extraer": ("ok", "vacia", "fallo"),
     "volver": ("ok", "fallo"),
@@ -59,6 +60,9 @@ POLICIA = {
     ("estado", "fin_libro"): "cierre",
     ("estado", "sin_coincidencia"): "siguiente",
     ("estado", "desconectado"): "reconectar",
+    # Pantalla "Visualizar Mensajes de Programa": se sale con Intro y se
+    # vuelve al formulario (medido 28/10).
+    ("estado", "mensajes"): "volver",
     ("buscar", "ok"): "extraer",
     ("buscar", "sin_coincidencia"): "siguiente",
     ("extraer", "ok"): "volver",

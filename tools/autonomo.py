@@ -42,7 +42,8 @@ import preflight_auto as pf
 import traza
 import vigia
 from _mcp import connect
-from estado import captura, clasificar, ocr_text
+from estado import (CRITERIOS_ESTADO, captura, clasificar_texto, ocr_text)
+import native_shot
 
 RAIZ = Path(__file__).resolve().parent.parent
 UMBRAL_JEV = 0.6
@@ -135,6 +136,55 @@ def jev_opcion_menu(texto: str):
     return m.group(1), nota
 
 
+INSTR_ESTADO = (
+    "Esta es la pantalla de un sistema IBM 5250 de gestion de clientes. Di que "
+    "pantalla es. Solo puede ser una de estas: formulario (CONSULTA "
+    "EDIFICIO-CUENTA MATRIZ, donde se escribe calle y numero de casa), ficha "
+    "(la ficha del edificio con otras direcciones, total de unidades y renta), "
+    "cuenta_matriz (CONSULTA UNIDADES, la lista de suscriptores de un "
+    "edificio), fin_libro (el aviso de giro mas alla del primer o ultimo "
+    "registro), desconectado (dialogo de AnyDesk), sin_coincidencia (aviso de "
+    "que la direccion no esta en el archivo) o error (aviso en rojo del 5250)."
+)
+
+
+async def jev_creen(texto: str):
+    """Jev dice QUE pantalla es. Devuelve (clave_estado|None, nota).
+
+    El criteria lleva el nombre del estado delante para poder mapear de vuelta
+    la respuesta (Jev devuelve el VALOR del criterio, no la clave).
+    """
+    criterios = {k: f"{k}: {v}" for k, v in CRITERIOS_ESTADO.items()}
+    choice, nota = jev_elige(texto, list(criterios.keys()), INSTR_ESTADO,
+                             criterios)
+    if not choice:
+        return None, nota
+    clave = choice.split(":", 1)[0].strip().lower()
+    if clave not in CRITERIOS_ESTADO:
+        return None, f"jev devolvio {choice!r}"
+    return clave, nota
+
+
+def _captura_limpia(hwnd: int, intentos: int = 3, espera: float = 0.9):
+    """Captura hasta que la pantalla sea legible.
+
+    Un frame a medio repintar produce un OCR vacio: si se tomara como verdad,
+    el agente creeria que no sabe donde esta y mandaria la secuencia de
+    navegacion a ciegas (medido el 28/10: la pantalla era el formulario y se
+    Navigó dos veces sin necesidad).
+    """
+    img, texto, st = None, "", {}
+    for i in range(intentos):
+        img, _ = captura(hwnd)
+        texto = ocr_text(img)
+        st = clasificar_texto(texto, usar_jev=False)
+        if st.get("estado") is not None or len(texto.strip()) >= 40:
+            return img, texto, st
+        print(f"  [pre] captura sucia ({len(texto.strip())} chars), reintento")
+        time.sleep(espera)
+    return img, texto, st
+
+
 def traza_segura(etapa: str, resultado: str, detalle: str = "") -> None:
     try:
         traza.evento(etapa, resultado, detalle)
@@ -155,30 +205,49 @@ async def pre_vuelo(s, hwnd: int, intentos: int = 5) -> bool:
             await asyncio.sleep(2.0)
             continue
 
-        img, _ = captura(hwnd)
-        st = clasificar(img, usar_jev=False)
+        img, texto, st = _captura_limpia(hwnd)
         est = st.get("estado")
-        print(f"  [pre] estado={est} conf={st.get('confianza')} err={st.get('error')}")
+        print(f"  [pre] estado={est} conf={st.get('confianza')} "
+              f"err={st.get('error')} texto={len(texto.strip())}c")
 
         if est == "formulario":
             return True
         if est == "desconectado":
             await asyncio.sleep(1.5)
             continue
+        if est in ("cuenta_matriz", "ficha", "error", "mensajes"):
+            if await L.entrar_formulario(s, hwnd):
+                return True
+            continue
 
-        # La logica sabe: listado/ficha -> volver, error -> ESC, None -> NAV.
+        # La logica NO sabe que pantalla es: Jev decide antes de tocar nada.
+        estado_jev, nota = await jev_creen(texto)
+        print(f"  [pre] jev: pantalla={estado_jev} ({nota})")
+        if estado_jev == "formulario":
+            return True
+        if estado_jev in ("cuenta_matriz", "ficha"):
+            if await L.volver_formulario(s, hwnd):
+                return True
+            continue
+        if estado_jev == "desconectado":
+            await asyncio.sleep(1.5)
+            continue
+
+        # Si hay un menu numerado, Jev elige la opcion que abre la consulta.
+        num, nota2 = jev_opcion_menu(texto)
+        print(f"  [pre] jev: opcion de menu={num} ({nota2})")
+        if num:
+            await pf.step(s, "jev_opcion", "write_to_anydesk", {"command": num})
+            await asyncio.sleep(0.5)
+            await pf.step(s, "jev_enter", "press_enter", {})
+            await asyncio.sleep(1.3)
+            continue
+
+        # Ultimo recurso: la secuencia de navegacion probada por el operador.
+        native_shot.save(img, f"pre-desconocido-{intento}")
+        print("  [pre] sin veredicto de Jev: se intenta la secuencia del operador")
         if await L.entrar_formulario(s, hwnd):
             return True
-
-        # La logica NO sabe. Jev elige la opcion de menu.
-        num, nota = jev_opcion_menu(ocr_text(img))
-        print(f"  [pre] jev -> opcion {num} ({nota})")
-        if not num:
-            return False
-        await pf.step(s, "jev_opcion", "write_to_anydesk", {"command": num})
-        await asyncio.sleep(0.5)
-        await pf.step(s, "jev_enter", "press_enter", None)
-        await asyncio.sleep(1.3)
     return False
 
 
@@ -191,6 +260,13 @@ async def por_direccion(s, hwnd: int, filas: list, dry: bool) -> list:
         id_ = f.get("id")
         print(f"\n=== {id_}: {f.get('direccion_parte1')} / {f.get('direccion_parte2')} ===")
         res = await L.procesa(f, hwnd, s, dry)
+        # B6/B7: el resultado se persiste en el ledger ANTES de seguir. Sin esto
+        # el resumen y el dossier releen datos viejos y una re-corrida puede
+        # duplicar pegadas.
+        fila_ledger = {k: res.get(k, "") for k in L.CAMPOS_LEDGER}
+        fila_ledger["hora_fin"] = time.strftime("%H:%M:%S")
+        if not dry:
+            L.ledger_escribe(fila_ledger)
         resultados.append(res)
         print(f"  -> estado={res.get('estado')} paginas={res.get('paginas_vistas')} "
               f"filas={res.get('filas_copiadas')} | {res.get('notas','')}")

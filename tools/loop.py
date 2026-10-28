@@ -120,7 +120,9 @@ def escribe_ficha(id_, ficha: str, ruta: Path = None) -> None:
     if not 0 <= n < len(filas):
         return
     filas[n]["ficha"] = ficha
-    with open(ruta, "w", encoding="utf-8", newline="") as fh:
+    # utf-8-sig: Excel en espanol reabre el CSV sin BOM como ANSI y garabatea
+    # las tildes de la ficha (el dato viene del portapapeles del 5250).
+    with open(ruta, "w", encoding="utf-8-sig", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=["parte1", "parte2", "ficha"],
                            delimiter=";", quoting=csv.QUOTE_MINIMAL)
         w.writeheader()
@@ -307,6 +309,36 @@ async def entrar_formulario(s, hwnd: int) -> bool:
             return True
         if r.get("estado") in ("cuenta_matriz", "ficha"):
             return await volver_formulario(s, hwnd)
+        if r.get("estado") == "error":
+            # Medido (operador, 28/10): cuando una direccion deja un aviso duro
+            # del 5250, la UNICA tecla que sale de esa pantalla es F3. Ni ESC ni
+            # F12 la cierran. F3 primero deja el aviso; si con el aviso se
+            # vuelve al formulario, no se pulsa F3 (podria cerrar el formulario).
+            await pf.step(s, "f3_error", "press_keys", {"keys": ["f3"]})
+            await asyncio.sleep(0.9)
+            img, _ = captura(hwnd)
+            r = clasificar(img, usar_jev=False)
+            if r.get("estado") == "formulario":
+                return True
+            if r.get("estado") in ("cuenta_matriz", "ficha"):
+                return await volver_formulario(s, hwnd)
+    # "Visualizar Mensajes de Programa" (medido 28/10 con sonda de teclas):
+    # la UNICA salida es Intro. Ni ESC ni F3 cierran esa pantalla.
+    if r.get("estado") == "mensajes":
+        await pf.step(s, "intro_mensajes", "press_enter", {})
+        await asyncio.sleep(1.0)
+        img, _ = captura(hwnd)
+        r = clasificar(img, usar_jev=False)
+        if r.get("estado") == "formulario":
+            return True
+        if r.get("estado") in ("cuenta_matriz", "ficha"):
+            return await volver_formulario(s, hwnd)
+        if r.get("estado") == "mensajes":
+            await pf.step(s, "intro_mensajes2", "press_enter", {})
+            await asyncio.sleep(1.0)
+            img, _ = captura(hwnd)
+            if clasificar(img, usar_jev=False).get("estado") == "formulario":
+                return True
     if r.get("estado") is not None:
         return False
     for _ in range(2):
@@ -346,7 +378,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
         try:
             # B0: si AnyDesk corto la sesion, se reconecta antes de leer nada.
             if not reconecta_si_hace_falta(hwnd):
-                res["motivo"] = "B0 sin conexion AnyDesk (dialogo de licencia)"
+                res["notas"] = "B0 sin conexion AnyDesk (dialogo de licencia)"
                 return res
 
             # B1: verificar pantalla antes de teclear.
@@ -361,12 +393,12 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
                 traza.evento("estado", st["estado"] or "desconocido",
                              detalle=f"{id_} tras reconectar")
             if st["estado"] != "formulario":
-                res["motivo"] = f"B1 pantalla {st['estado']}"
+                res["notas"] = f"B1 pantalla {st['estado']}"
                 return res
 
             _img, _vp, det = rowdet.detect(hwnd)
             if len(det) < 3:
-                res["motivo"] = "B1 sin filas del formulario"
+                res["notas"] = "B1 sin filas del formulario"
                 return res
 
             await buscar(s, hwnd, det, parte1, parte2)
@@ -374,7 +406,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False) -> dict:
             # B2: verificar antes de F10.
             ok, detalle = await verifica_texto(hwnd)
             if not ok:
-                res["motivo"] = f"B2 {detalle}"
+                res["notas"] = f"B2 {detalle}"
                 traza.evento("buscar", "fallo", detalle=f"{id_} {detalle}")
                 if intento < REINTENTOS:
                     await pf.step(s, "esc", "press_keys", {"keys": ["escape"]})
@@ -517,7 +549,7 @@ async def main(hwnd: int, solo_id: str | None, dry: bool = False) -> int:
     hechos = ledger_leido()
     pendientes = [f for f in filas if not (hechos.get(f.get("id"), {}).get("estado") == "ok")]
     if not pendientes:
-        print("todo ya processed (B7)")
+        print("todo ya procesado (B7)")
         return 0
 
     async with connect() as s:

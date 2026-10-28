@@ -26,7 +26,7 @@ sys.path.insert(0, REPO)
 from mcp_anydesk_server import window_manager as W  # noqa: E402
 
 ESTADOS = ["formulario", "ficha", "cuenta_matriz", "fin_libro", "desconectado",
-           "sin_coincidencia", "error"]
+           "sin_coincidencia", "error", "mensajes"]
 # Descripcion de cada estado que ve Jev. Con {opcion: opcion} el modelo recibia
 # palabras sueltas ("ficha", "error") y no podia tellas: con la descripcion real
 # de cada pantalla decide mejor.
@@ -49,6 +49,9 @@ CRITERIOS_ESTADO = {
     "error": "Aviso duro del 5250: area protegida de la pantalla, requiere "
              "caracteres numericos, codigo de comunidad invalido, o tecla no "
              "permitida.",
+    "mensajes": "Pantalla 'Visualizar Mensajes de Programa' del 5250: avisa de "
+                "un error de un programa y pide 'Teclee respuesta, pulse Intro'. "
+                "Se sale con Intro.",
 }
 # Jev con poca confianza NO es un veredicto: se deja sin clasificar para que
 # el bucle aborte (medido en vivo: una pagina web dio "formulario" con 0.35).
@@ -120,6 +123,14 @@ RE_REMOTO_APAGADO = re.compile(
 # Negativo duro: marcadores de navegador/hoja de calculo. Una hoja con la MISMA
 # tabla de direcciones y suscriptores se parece demasiado al listado 5250 (medido
 # en vivo: Jev la clasifico 'cuenta_matriz' con 0.83 y habria tecleado encima).
+# Pantalla "Visualizar Mensajes de Programa" (medido 28/10): el 5250 avisa de
+# un error de programa y queda esperando "Teclee respuesta, pulse Intro". La
+# salida es UN ENTER: ni ESC ni F3 la cierran (medido con sonda de teclas).
+RE_MENSAJES = re.compile(
+    r"MENSAJES\s+DE\s+PROGRAMA|TECLEE\s+RESPUESTA",
+    re.IGNORECASE,
+)
+
 RE_NO_IBM = re.compile(
     r"GOOGLE\s+SHEETS|ASK\s+GEMINI|LIMPIEZA\s+RR|CHROME|FIREFOX|"
     r"HTTPS?://|WWW\.",
@@ -199,6 +210,7 @@ def reglas(texto: str) -> dict:
         "unidades": bool(RE_UNIDADES.search(texto)),
         "fin": bool(fin),
         "desconectado": bool(desconectado),
+        "mensajes": bool(RE_MENSAJES.search(texto)),
         "aviso": duro.group(0).upper() if duro else None,
         "no_encontrado": faltante.group(0).upper() if faltante else None,
         "no_ibm": bool(RE_NO_IBM.search(texto)),
@@ -218,6 +230,12 @@ def reglas(texto: str) -> dict:
                  else "sesion AnyDesk cortada (licencia)")
         return {"estado": "desconectado", "fuente": "regla", "confianza": 0.95,
                 "senales": senales, "error": causa}
+    # "Visualizar Mensajes de Programa": se sale con Intro (medido 28/10 con
+    # sonda de teclas: F3 solo NO sale, ENTER+F3 si).
+    if senales["mensajes"]:
+        return {"estado": "mensajes", "fuente": "regla", "confianza": 0.95,
+                "senales": senales,
+                "error": "mensajes de programa (se sale con Intro)"}
     if senales["aviso"]:
         return {"estado": "error", "fuente": "regla", "confianza": 1.0, "senales": senales}
     # Fin de archivo gana sobre 'cuenta_matriz': el listado sigue en pantalla,
