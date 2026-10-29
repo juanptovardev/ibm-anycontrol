@@ -12,9 +12,17 @@ import preflight_auto as pf
 
 class TestEnfocar(unittest.TestCase):
     def test_sin_objetivo_no_estorba(self):
+        # Sin objetivo global `asegura` no hace nada: ni lee ni enfoca.
         with patch.object(enfocar, "OBJETIVO", None):
             self.assertTrue(enfocar.asegura())
-            self.assertTrue(enfocar.asegura(123))
+
+    def test_objetivo_inexistente_no_puede_enfocar(self):
+        # Hermetico: `vigia.raiz` simulado, sin depender de la ventana real de
+        # AnyDesk ni de cual sea el primer plano del escritorio.
+        with patch.object(enfocar, "OBJETIVO", None), \
+                patch.object(enfocar, "vigia") as vigia:
+            vigia.raiz.return_value = None
+            self.assertFalse(enfocar.asegura(123))
 
     def test_sin_ventana_da_error(self):
         with patch.object(enfocar, "OBJETIVO", 123), \
