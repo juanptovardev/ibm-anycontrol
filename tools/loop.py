@@ -26,6 +26,7 @@ Uso: python tools/loop.py <hwnd> [id] [--dry]
 import asyncio
 import csv
 import json
+import os
 import re
 import sys
 import time
@@ -199,43 +200,97 @@ def lee_datos(ruta: Path = DATOS) -> list[dict]:
     return filas
 
 
+def _sep_ledger(ruta: Path) -> str:
+    """Separador del ledger: ';' (el nuevo) o ',' (el antiguo, por migrar)."""
+    try:
+        with open(ruta, encoding="utf-8-sig", newline="") as fh:
+            head = fh.readline()
+    except OSError:
+        return ";"
+    return ";" if head.count(";") >= head.count(",") else ","
+
+
 def ledger_leido(ruta: Path = LEDGER) -> dict:
-    """id -> ULTIMA fila del ledger (bitacora append-only)."""
-    if not ruta.exists():
-        return {}
-    with open(ruta, encoding="utf-8-sig", newline="") as fh:
-        filas = list(csv.DictReader(fh))
-    return {f["id"]: f for f in filas}
+    """id -> fila del ledger. UNA fila por direccion: el estado actual.
 
-
-def ledger_en_curso(ruta: Path = LEDGER) -> dict:
-    """id -> ULTIMA fila 'en_curso' del ledger (punto real de reanudacion).
-
-    El ledger es append-only y, cuando una direccion se corta a media matriz,
-    despues de las filas 'en_curso' se escribe una 'error'. La ultima fila del
-    id no sirve para reanudar: hay que buscar la ultima 'en_curso' de esa
-    direccion, o el relanzamiento repetiria las paginas ya pegadas.
+    Antes el ledger era append-only (una fila por pagina pegada) y se leia
+    como una lista vertical de la misma direccion repetida. Ahora es una tabla:
+    una fila por direccion, actualizada en el sitio. El historial completo
+    sigue en datos/traza.jsonl, que si es append-only.
     """
     if not ruta.exists():
         return {}
     with open(ruta, encoding="utf-8-sig", newline="") as fh:
-        filas = list(csv.DictReader(fh))
-    ultimo = {}
-    for f in filas:
-        if f.get("estado") == "en_curso":
-            ultimo[f.get("id")] = f
-    return ultimo
+        filas = list(csv.DictReader(fh, delimiter=_sep_ledger(ruta)))
+    return {f.get("id"): f for f in filas if f.get("id")}
+
+
+def es_resumable(fila: dict) -> bool:
+    """True si la fila dice que esa direccion quedo a medias.
+
+    Resumible = estado 'en_curso' o un error despues de haber pegado alguna
+    pagina (paginas_vistas > 0). 'ok' y 'no_encontrado' no se reanudan.
+    """
+    estado = (fila.get("estado") or "").strip()
+    if estado == "ok":
+        return False
+    try:
+        paginas = int(fila.get("paginas_vistas") or 0)
+    except (TypeError, ValueError):
+        paginas = 0
+    return estado == "en_curso" or paginas > 0
+
+
+def ledger_en_curso(ruta: Path = LEDGER) -> dict:
+    """id -> fila de las direcciones que quedaron a medias (reanudables)."""
+    return {k: v for k, v in ledger_leido(ruta).items() if es_resumable(v)}
 
 
 def ledger_escribe(fila: dict, ruta: Path = LEDGER) -> None:
-    """Anade (o reemplaza) una fila del ledger. Append-only por item."""
+    """Guarda el estado de UNA direccion. Una fila por id, escritura atomica.
+
+    Reescribe el fichero entero con una fila por direccion (upsert por id). La
+    escritura es atomica (temporal + os.replace): un corte a mitad no deja el
+    ledger corrupto.
+    """
     ruta.parent.mkdir(parents=True, exist_ok=True)
-    nuevo = not ruta.exists()
-    with open(ruta, "a", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=CAMPOS_LEDGER)
-        if nuevo:
-            writer.writeheader()
-        writer.writerow({c: fila.get(c, "") for c in CAMPOS_LEDGER})
+    filas = ledger_leido(ruta)
+    id_ = (fila.get("id") or "").strip()
+    if id_:
+        nuevo = {c: fila.get(c, "") for c in CAMPOS_LEDGER}
+        # El punto de reanudacion no se pierde: si la fila nueva no dice
+        # cuantas paginas se pegaron y la anterior si, se hereda. Solo si es
+        # la MISMA direccion (el id es posicional: si el operador cambia la
+        # fila del CSV, el id pasa a apuntar a otra direccion y el valor viejo
+        # no valdria).
+        prev = filas.get(id_)
+        if prev:
+            try:
+                paginas = int(nuevo.get("paginas_vistas") or 0)
+            except (TypeError, ValueError):
+                paginas = 0
+            misma = (normaliza_dir(prev.get("direccion_parte1")) ==
+                     normaliza_dir(nuevo.get("direccion_parte1")) and
+                     normaliza_dir(prev.get("direccion_parte2")) ==
+                     normaliza_dir(nuevo.get("direccion_parte2")))
+            if paginas <= 0 and misma:
+                nuevo["paginas_vistas"] = prev.get("paginas_vistas", "") or ""
+                nuevo["filas_copiadas"] = prev.get("filas_copiadas", "") or ""
+        filas[id_] = nuevo
+    tmp = ruta.with_suffix(ruta.suffix + ".tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8-sig", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=CAMPOS_LEDGER, delimiter=";")
+            w.writeheader()
+            for f in filas.values():
+                w.writerow({c: f.get(c, "") for c in CAMPOS_LEDGER})
+        os.replace(tmp, ruta)
+    except BaseException:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
 async def espera_estado(hwnd: int, objetivos: set[str], intentos: int = 8,
@@ -312,27 +367,33 @@ def merge_fichas_pendientes() -> int:
 
 
 async def buscar(s, hwnd: int, det: list, parte1: str, parte2: str) -> None:
-    """Macro de busqueda validada: clic, flechas, step1, +, step2, +, F10."""
+    """Macro de busqueda validada: clic, flechas, step1, +, step2, +, F10.
+
+    Limpieza del campo Nombre con la secuencia del operador (28/10): un clic
+    en la celda 1, flecha derecha, flecha izquierda, Suprimir y el '+' del
+    bloque numerico. Eso limpia el campo y salta al siguiente (Calle). Antes se
+    sobrescribia con 24 espacios: 5.5 s por direccion y fragil.
+    """
+    nombre = det[NOMBRE]
     calle = det[CALLE]
-    # En este emulador no existe borrado: 'delete' no borra y 'home' salta al
-    # primer campo. La unica forma de vaciar un campo es sobrescribirlo con
-    # espacios. Se limpian Nombre y Calle antes de escribir para que no quede
-    # basura que luego desvie la busqueda.
-    for idx in (NOMBRE, CALLE):
-        fila = det[idx]
-        await pf.step(s, f"limpiar_{idx}", "click_point",
-                      {"x": fila["field_x"] + 2, "y": fila["cy"]})
-        await pf.step(s, f"blancos_{idx}", "write_to_anydesk",
-                      {"command": " " * 24})
-        await asyncio.sleep(0.2)
     # UN solo clic pegado al borde izquierdo del subrayado (= celda 1). Dos clics
     # al mismo punto se leen como DOBLE CLIC, seleccionan el campo entero y dejan
     # el teclado inhibido (bug medido el 27/10). No reintroducir el segundo clic.
-    await pf.step(s, "clic_celda1", "click_point",
+    await pf.step(s, "nombre_clic", "click_point",
+                  {"x": nombre["field_x"] + 2, "y": nombre["cy"]})
+    await asyncio.sleep(0.2)
+    await pf.step(s, "nombre_derecha", "press_keys", {"keys": ["right"]})
+    await pf.step(s, "nombre_izquierda", "press_keys", {"keys": ["left"]})
+    await pf.step(s, "nombre_suprimir", "press_keys", {"keys": ["delete"]})
+    # El '+' del bloque numerico (Field Exit) deja el cursor en Calle.
+    await pf.step(s, "nombre_mas", "press_keys", {"keys": ["add"]})
+    await asyncio.sleep(0.2)
+    await pf.step(s, "calle_clic", "click_point",
                   {"x": calle["field_x"] + 2, "y": calle["cy"]})
     await asyncio.sleep(0.2)
-    await pf.step(s, "derecha", "press_keys", {"keys": ["right"]})
-    await pf.step(s, "izquierda", "press_keys", {"keys": ["left"]})
+    await pf.step(s, "calle_derecha", "press_keys", {"keys": ["right"]})
+    await pf.step(s, "calle_izquierda", "press_keys", {"keys": ["left"]})
+    await pf.step(s, "calle_suprimir", "press_keys", {"keys": ["delete"]})
     await pf.step(s, "step1", "write_to_anydesk", {"command": parte1})
     await pf.step(s, "plus1", "press_keys", {"keys": ["add"]})
     await pf.step(s, "step2", "write_to_anydesk", {"command": parte2})
@@ -837,7 +898,7 @@ def reanuda_desde(hechos: dict, fila: dict) -> int:
     del edificio nuevo. Por eso se exige que la direccion del ledger coincida.
     """
     prev = hechos.get(fila.get("id"), {}) or {}
-    if prev.get("estado") != "en_curso":
+    if not es_resumable(prev):
         return 0
     if (normaliza_dir(prev.get("direccion_parte1")) !=
             normaliza_dir(fila.get("direccion_parte1")) or

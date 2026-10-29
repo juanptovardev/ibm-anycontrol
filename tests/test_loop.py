@@ -26,8 +26,8 @@ class TestLedger(unittest.TestCase):
                               "filas_copiadas": 14, "paginas_vistas": 2,
                               "hora_inicio": "10:00:00", "hora_fin": "10:00:12",
                               "notas": "14 filas", "reintentos": 0}, self.ruta)
-        with open(self.ruta, encoding="utf-8", newline="") as fh:
-            filas = list(csv.DictReader(fh))
+        with open(self.ruta, encoding="utf-8-sig", newline="") as fh:
+            filas = list(csv.DictReader(fh, delimiter=";"))
         self.assertEqual(len(filas), 1)
         self.assertEqual(filas[0]["id"], "P1")
         self.assertEqual(filas[0]["estado"], "ok")
@@ -37,8 +37,8 @@ class TestLedger(unittest.TestCase):
     def test_anade_sin_duplicar_cabecera(self):
         for i in range(3):
             loop.ledger_escribe({"id": f"P{i}", "estado": "ok"}, self.ruta)
-        with open(self.ruta, encoding="utf-8", newline="") as fh:
-            filas = list(csv.DictReader(fh))
+        with open(self.ruta, encoding="utf-8-sig", newline="") as fh:
+            filas = list(csv.DictReader(fh, delimiter=";"))
         self.assertEqual(len(filas), 3)
         self.assertEqual([f["id"] for f in filas], ["P0", "P1", "P2"])
 

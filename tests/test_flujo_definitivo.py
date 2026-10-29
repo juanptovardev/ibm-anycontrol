@@ -175,20 +175,35 @@ class TestPantallaNegra(unittest.IsolatedAsyncioTestCase):
 
 
 class TestLedgerEnCurso(unittest.TestCase):
-    """El punto de reanudacion es la ultima fila en_curso, no la ultima fila."""
+    """El punto de reanudacion sobrevive a la fila final de error."""
 
     def test_un_error_posterior_no_borra_el_punto_de_reanudacion(self):
         with tempfile.TemporaryDirectory() as tmp:
             ruta = Path(tmp) / "ledger.csv"
-            ruta.write_text(
-                "id,direccion_parte1,direccion_parte2,estado,paginas_vistas\n"
-                "D02,CR 84A,145-94,en_curso,7\n"
-                "D02,CR 84A,145-94,en_curso,8\n"
-                "D02,CR 84A,145-94,error,0\n",
-                encoding="utf-8")
+            # La direccion se corta tras 8 paginas y el item termina en error:
+            # la fila final no dice paginas, pero el punto se hereda.
+            L.ledger_escribe({"id": "D02", "direccion_parte1": "CR 84A",
+                              "direccion_parte2": "145-94",
+                              "estado": "en_curso", "paginas_vistas": "8"}, ruta)
+            L.ledger_escribe({"id": "D02", "direccion_parte1": "CR 84A",
+                              "direccion_parte2": "145-94",
+                              "estado": "error", "paginas_vistas": "0"}, ruta)
             hechos = L.ledger_en_curso(ruta)
             self.assertEqual(hechos["D02"]["paginas_vistas"], "8")
             self.assertEqual(L.reanuda_desde(hechos, _fila()), 8)
+
+    def test_una_direccion_nueva_no_hereda_el_punto_viejo(self):
+        # Si el operador cambia la fila del CSV, el id pasa a apuntar a otra
+        # direccion: el punto viejo no debe heredarse.
+        with tempfile.TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "ledger.csv"
+            L.ledger_escribe({"id": "D02", "direccion_parte1": "CR 84A",
+                              "direccion_parte2": "145-94",
+                              "estado": "en_curso", "paginas_vistas": "8"}, ruta)
+            L.ledger_escribe({"id": "D02", "direccion_parte1": "OTRA",
+                              "direccion_parte2": "999-99",
+                              "estado": "error", "paginas_vistas": "0"}, ruta)
+            self.assertEqual(L.ledger_en_curso(ruta), {})
 
 
 class TestSoloFicha(unittest.IsolatedAsyncioTestCase):

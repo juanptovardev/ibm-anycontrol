@@ -42,7 +42,7 @@ class TestPorDireccionPersiste(unittest.TestCase):
         with patch.object(L, "procesa", fake_procesa), \
              patch.object(L, "ledger_escribe", fake_ledger), \
              patch.object(L, "entrar_formulario", fake_entrar), \
-             patch.object(L, "ledger_leido", lambda: {}), \
+             patch.object(L, "ledger_leido", lambda *a, **k: {}), \
              patch.object(autonomo, "traza_segura", lambda *a, **k: None):
             res = asyncio.run(autonomo.por_direccion(None, 1, filas, False))
 
@@ -60,9 +60,9 @@ class TestPorDireccionPersiste(unittest.TestCase):
 
         with patch.object(L, "procesa", fake_procesa), \
              patch.object(L, "ledger_escribe",
-                          lambda f: self.fail("en dry no se escribe el ledger")), \
+                           lambda *a, **k: self.fail("en dry no se escribe el ledger")), \
              patch.object(L, "entrar_formulario", fake_entrar), \
-             patch.object(L, "ledger_leido", lambda: {}), \
+             patch.object(L, "ledger_leido", lambda *a, **k: {}), \
              patch.object(autonomo, "traza_segura", lambda *a, **k: None):
             asyncio.run(autonomo.por_direccion(None, 1, [{"id": "D01"}], True))
 
