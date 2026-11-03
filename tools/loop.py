@@ -223,35 +223,21 @@ def ledger_escribe(fila: dict, ruta: Path = LEDGER) -> None:
         raise
 
 
-UMBRAL_CAMBIO = 50
-
-
 async def espera_estado(hwnd: int, objetivos: set[str], intentos: int = 12,
                         delay: float = 0.4) -> dict:
     """Espera a que la pantalla llegue a uno de los estados. B3/B4.
 
-    Antes cada sondeo pagaba un OCR de pantalla completa (~0,93 s) y el
-    primero se gastaba SIEMPRE: el F10 tarda ~1 s en pintarse, asi que ese
-    sondeo no podia ver nada. Ahora se captura cada `delay` y se compara con
-    la captura anterior (10 ms): solo se clasifica cuando la pantalla ha
-    CAMBIADO. Los sondeos en espera cuestan 40 ms en vez de 960 ms.
-
-    La clasificacion sigue siendo la COMPLETA a proposito: sus palabras
-    (cabecera Suscript) son las que T4' reutiliza para el primer bloque, y
-    un recorte por franja las perderia (0,33 s de ahorro contra 0,93 s de
-    OCR recreado).
+    El delay es corto (0,4 s) y hay mas intentos que antes: cada sondeo paga
+    ~0,93 s de OCR, asi que esperar poco y sondear mas hace que el estado se
+    detecte antes (medido: el F10 tarda ~1 s en pintarse; con 0,7 s de espera
+    el acierto llegaba a los 1,63 s y con 0,4 s a los 1,33 s).
     """
-    img0, _vp = captura(hwnd)
     for _ in range(intentos):
-        await asyncio.sleep(delay)
         img, _vp = captura(hwnd)
-        if pf.changed_px(img0, img) < UMBRAL_CAMBIO:
-            img0 = img
-            continue
-        img0 = img
         st = clasificar(img, usar_jev=False)
         if st["estado"] in objetivos:
             return st
+        await asyncio.sleep(delay)
     img, _vp = captura(hwnd)
     return clasificar(img, usar_jev=True)
 
