@@ -305,9 +305,15 @@ def ledger_escribe(fila: dict, ruta: Path = LEDGER) -> None:
         raise
 
 
-async def espera_estado(hwnd: int, objetivos: set[str], intentos: int = 8,
-                        delay: float = 0.7) -> dict:
-    """Espera a que la pantalla llegue a uno de los estados. B3/B4."""
+async def espera_estado(hwnd: int, objetivos: set[str], intentos: int = 12,
+                        delay: float = 0.4) -> dict:
+    """Espera a que la pantalla llegue a uno de los estados. B3/B4.
+
+    El delay es corto (0,4 s) y hay mas intentos que antes: cada sondeo paga
+    ~0,93 s de OCR, asi que esperar poco y sondear mas hace que el estado se
+    detecte antes (medido: el F10 tarda ~1 s en pintarse; con 0,7 s de espera
+    el acierto llegaba a los 1,63 s y con 0,4 s a los 1,33 s).
+    """
     for _ in range(intentos):
         img, _vp = captura(hwnd)
         st = clasificar(img, usar_jev=False)

@@ -18,7 +18,8 @@ import sys
 
 import preflight_auto as pf
 from _mcp import connect, need_hwnd
-from estado import captura, clasificar_rapido, clasificar_texto, ocr_completo
+from estado import (captura, clasificar_rapido, clasificar_texto, ocr_completo,
+                    tipo_pixeles)
 
 ESPERA_TAB = 0.5
 ESPERA_PAGINA = 0.3
@@ -55,7 +56,13 @@ async def volver(s, hwnd: int, intentos: int = 3, sondeos: int = 4) -> dict:
         await pf.step(s, f"volver_alt_tab_{i}", "press_keys", {"keys": ["alt", "tab"]})
         for _ in range(sondeos):
             await asyncio.sleep(ESPERA_TAB)
-            st = clasificar_rapido(captura(hwnd)[0])
+            img, _vp = captura(hwnd)
+            if tipo_pixeles(img) == "navegador":
+                # Seguimos en el navegador: otro sondeo. El clasificador por
+                # pixeles son 20 ms en vez de ~405 ms de OCR (medido: 228
+                # capturas reales, margen de 4x entre los dos grupos).
+                continue
+            st = clasificar_rapido(img)
             senales = st.get("senales") or {}
             estado = st.get("estado")
             if estado in IBM_OK:

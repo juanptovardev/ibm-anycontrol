@@ -203,6 +203,41 @@ def captura(hwnd: int) -> tuple[Image.Image, dict]:
     return native_shot.grab(vp["hwnd"]), vp
 
 
+# --- Clasificador por pixeles (sin OCR) --------------------------------------
+# Medido sobre 228 capturas reales del 03/11 (evidencia/ del repo piloto100):
+#   5250 (fondo negro + texto verde): 79,7..82,2 por ciento de pixeles casi
+#                                      negros y solo 0,3..9,5 de casi blancos
+#   Hoja de Google en Chrome:         3,6..3,8 de casi negros y
+#                                      79,0..82,7 de casi blancos
+# Los dos grupos NO se solapan: con el umbral del 40 por ciento el margen es
+# de 4x. Sirve para las preguntas binarias ("¿es el 5250 o el navegador?")
+# sin pagar los ~405 ms del OCR de la franja.
+_UMBRAL_PIXELES = 40
+
+
+def pixeles_pantalla(img: Image.Image) -> tuple[int, int]:
+    """(por ciento de pixeles casi negros, por ciento de casi blancos).
+
+    Todo el calculo va en C: `convert("L")` + `histogram()` sobre 880.000
+    pixeles tarda ~20 ms; un bucle en Python tardaria ~500 ms.
+    """
+    hist = img.convert("L").histogram()
+    total = sum(hist) or 1
+    negros = sum(hist[:41]) * 100.0 / total
+    blancos = sum(hist[201:]) * 100.0 / total
+    return int(negros), int(blancos)
+
+
+def tipo_pixeles(img: Image.Image) -> str:
+    """'ibm' | 'navegador' | None (inconcluyente: hay que pasar por el OCR)."""
+    negros, blancos = pixeles_pantalla(img)
+    if negros > _UMBRAL_PIXELES and blancos <= _UMBRAL_PIXELES:
+        return "ibm"
+    if blancos > _UMBRAL_PIXELES and negros <= _UMBRAL_PIXELES:
+        return "navegador"
+    return None
+
+
 def reglas(texto: str) -> dict:
     """Clasificacion determinista. Devuelve estado o None si no se atreve.
 

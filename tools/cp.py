@@ -31,7 +31,8 @@ import preflight_auto as pf
 import native_shot
 import perfil
 from _mcp import connect, need_hwnd
-from estado import captura, clasificar, clasificar_rapido, ocr_text
+from estado import (captura, clasificar, clasificar_rapido, ocr_text,
+                    tipo_pixeles)
 
 # Bloque del operador: 7 abajo, 72 derecha, 14 abajo (15 filas x 72 columnas).
 BAJAR_INICIO = 7
@@ -158,11 +159,24 @@ async def _pegar(s, hwnd: int) -> None:
     si el destino sigue sin ser el navegador, se reenvia el Alt+Tab una vez.
     """
     async def _espera_destino(sondeos: int) -> tuple:
+        """Sondea el destino del Alt+Tab hasta que sea el navegador.
+
+        El clasificador por pixeles (20 ms) decide el caso normal: la hoja es
+        casi toda blanca y el 5250 casi todo negro (medido sobre 228 capturas
+        reales, margen de 4x). Solo si los pixeles no son concluyentes se
+        recurre al OCR (~405 ms).
+        """
         st: dict = {}
         img = None
         for _ in range(sondeos):
             await asyncio.sleep(0.35)
             img, _vp = captura(hwnd)
+            tipo = tipo_pixeles(img)
+            if tipo == "navegador":
+                return {"estado": None, "senales": {"no_ibm": True}}, img
+            if tipo == "ibm":
+                # Seguimos en el 5250: el Alt+Tab no llego al remoto.
+                return {"estado": None, "senales": {"no_ibm": False}}, img
             st = clasificar_rapido(img)
             if (st.get("senales") or {}).get("no_ibm"):
                 return st, img
