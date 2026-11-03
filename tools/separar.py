@@ -24,11 +24,16 @@ La direccion se escribe entera, por ejemplo `CR 6SUR 22C-19`, y se parte en:
 
 Uso
 ---
-    python tools/separar.py                  lee el portapapeles y escribe datos/direcciones.csv
+    python tools/separar.py                  lee el portapapeles y escribe datos/direcciones_nuevas.csv
     python tools/separar.py lista.txt        lee una direccion por linea
     python tools/separar.py hoja.csv         lee la primera columna de un CSV
     python tools/separar.py --dry            solo muestra el resultado, no escribe
-    python tools/separar.py --salida otra.csv
+    python tools/separar.py --salida=otra.csv
+    python tools/separar.py --salida=datos/direcciones.csv --produccion
+                                            (el CSV de produccion exige el flag
+                                             --produccion, y no se degrada: si
+                                             las filas nuevas son menos que las
+                                             que hay, no se escribe nada)
 
 Las direcciones que no se pueden separar se listan con su motivo para
 arreglarlas a mano; las validas se escriben con el contrato de siempre
@@ -40,7 +45,13 @@ import sys
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
-SALIDA = RAIZ / "datos" / "direcciones.csv"
+# El CSV de PRODUCCION (la lista que consume el agente) no se pisa por
+# defecto: esta es una herramienta de preparacion, y un descuido al pasarle
+# `--salida ruta` sin `=` dejo la variable en produccion y estuvo a punto de
+# sobrescribir las 121 direcciones del operador con 3. Para tocar el CSV de
+# produccion hay que pedirlo explicitamente con `--produccion`.
+PRODUCCION = RAIZ / "datos" / "direcciones.csv"
+SALIDA = RAIZ / "datos" / "direcciones_nuevas.csv"
 CABECERA = ["parte1", "parte2", "ficha"]
 
 PREFIJOS = ("CL", "CR", "TR", "DG", "TV")
@@ -198,15 +209,37 @@ def lee_portapapeles() -> list:
 
 
 def main(argv) -> int:
-    args = [a for a in argv[1:] if not a.startswith("--")]
     dry = "--dry" in argv
+    produccion = "--produccion" in argv
     salida = SALIDA
     columna = 0
-    for a in argv[1:]:
+    args = []
+    resto = list(argv[1:])
+    i = 0
+    while i < len(resto):
+        a = resto[i]
         if a.startswith("--salida="):
             salida = Path(a.split("=", 1)[1])
+        elif a == "--salida":
+            # Antes solo se aceptaba `--salida=ruta`. Con `--salida ruta` la
+            # ruta era un argumento suelto que se ignoraba en silencio y el
+            # destino se quedaba en produccion.
+            i += 1
+            if i >= len(resto):
+                print("ERROR: --salida necesita una ruta", file=sys.stderr)
+                return 2
+            salida = Path(resto[i])
         elif a.startswith("--columna="):
             columna = int(a.split("=", 1)[1])
+        elif a.startswith("--"):
+            pass                      # flag desconocida: se ignora
+        else:
+            args.append(a)
+        i += 1
+    if len(args) > 1:
+        print(f"ERROR: sobran argumentos {args[1:]}. "
+              f"El destino se escribe --salida=ruta", file=sys.stderr)
+        return 2
 
     try:
         if args:
@@ -233,12 +266,33 @@ def main(argv) -> int:
                   f"{p['estado']}: {p['motivo']}")
 
     if dry:
-        print("\nDRY: no se escribio nada")
+        print(f"\nDRY: no se escribio nada (destino previsto: {salida})")
         return 0 if not mal else 1
     if not ok:
         print("\nNada que escribir.", file=sys.stderr)
         return 1
-    ruta = escribe(ok, salida)
+    destino = Path(salida)
+    try:
+        es_produccion = destino.resolve() == PRODUCCION.resolve()
+    except OSError:
+        es_produccion = False
+    if es_produccion and not produccion:
+        print("ERROR: escribir el CSV de produccion (datos/direcciones.csv) "
+              "exige --produccion.\n       Sin ese flag el destino es "
+              "datos/direcciones_nuevas.csv", file=sys.stderr)
+        return 2
+    if es_produccion:
+        actuales = 0
+        if destino.exists():
+            with open(destino, encoding="utf-8-sig", newline="") as fh:
+                actuales = sum(1 for f in csv.reader(fh, delimiter=";")
+                               if f and f[0] and f[0] != CABECERA[0])
+        if actuales and len(ok) < actuales:
+            print(f"ERROR: el CSV de produccion tiene {actuales} direcciones y "
+                  f"solo se separaron {len(ok)}: no se degrada la lista del "
+                  f"operador", file=sys.stderr)
+            return 2
+    ruta = escribe(ok, destino)
     print(f"\nescrito: {ruta} ({len(ok)} direcciones)")
     return 0 if not mal else 1
 

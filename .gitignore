@@ -12,6 +12,8 @@ datos/control.json
 datos/*.err
 datos/fichas_pendientes.csv
 datos/direcciones.csv
+datos/direcciones_nuevas.csv
+datos/direcciones.tmp
 datos/ledger.csv
 datos/*backup*.csv
 datos/prueba_*.csv
