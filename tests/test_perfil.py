@@ -133,11 +133,29 @@ class TestDeficit(unittest.TestCase):
     def test_la_pausa_crece_con_el_deficit(self):
         t0 = time.time()
         # Sin jitter para comparar el efecto del deficit y no del azar.
+        # El deficit util es el techo menos lo que la direccion tardara de
+        # verdad (23 s estimadas), asi que los techos tienen que estar por
+        # encima de esa estimacion.
         with unittest.mock.patch.object(perfil, "jitter",
                                        lambda valor=None: 0.0):
-            poca = perfil.pausa(t0, "cierre", 8.0)
-            mucha = perfil.pausa(t0, "cierre", 12.0)
+            poca = perfil.pausa(t0, "cierre", 30.0)
+            mucha = perfil.pausa(t0, "cierre", 40.0)
         self.assertGreater(mucha, poca)
+
+    def test_si_el_motor_es_mas_lento_que_el_techo_no_se_pausa(self):
+        # Perfil humano (18,3 s) con un motor de ~23 s: no hay nada que
+        # rellenar y pausar en balde solo haria la direccion mas lenta.
+        t0 = time.time()
+        self.assertEqual(perfil.pausa(t0, "antes_f10", 18.3, paginas=1), 0.0)
+
+    def test_el_reparto_entre_los_cuatro_puntos_cubre_el_deficit(self):
+        t0 = time.time()
+        with unittest.mock.patch.object(perfil, "jitter",
+                                       lambda valor=None: 0.0):
+            total = sum(perfil.pausa(t0, p, 30.0, paginas=1)
+                        for p in perfil.PUNTOS)
+        # Techo 30 - estimacion 23 = 7 s de relleno repartidos.
+        self.assertAlmostEqual(total, 7.0, delta=0.01)
 
 
 class TestIntegracionConElMotor(unittest.TestCase):

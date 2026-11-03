@@ -79,6 +79,17 @@ PUNTOS = {
     "cierre": 0.40,
 }
 
+# Estimacion del tiempo REAL que tarda una direccion (medido el 03/11 con el
+# motor optimizado): unos 15 s fijos (busqueda, ficha, retorno, reencuadre) y
+# unos 8 s por pagina (bloque + vuelta + AvPag).
+#
+# Sin esta estimacion el relleno de pausas se desborda: al principio de la
+# direccion el deficit (techo - lo que lleva) parece enorme y se pausan 3-6 s
+# que despues no se pueden recuperar. Medido: el perfil humano daba 27,6 s
+# por direccion en vez de los 18,3 del techo.
+FIJO_ESTIMADO = 15.0
+POR_PAGINA_ESTIMADO = 8.0
+
 # Ninguna pausa individual puede pasar de esto (una persona no se queda 20 s
 # mirando la pantalla antes de pulsar F10).
 MAX_PAUSA = 6.0
@@ -130,17 +141,30 @@ def deficit(t0, objetivo=None):
     return max(0.0, obj - (time.time() - float(t0)))
 
 
-def pausa(t0, punto, objetivo=None, valor=None):
+def estimar(paginas: int = 1) -> float:
+    """Segundos que tardara de verdad una direccion con esas paginas."""
+    return FIJO_ESTIMADO + POR_PAGINA_ESTIMADO * max(1, int(paginas))
+
+
+def pausa(t0, punto, objetivo=None, valor=None, paginas: int = 1) -> float:
     """Segundos a dormir en este punto (0 si no hay deficit).
 
-    Devuelve 0 si el deficit es 0: en ese caso el motor va mas lento que el
-    perfil y no hay nada que rellenar.
+    El deficit util es el techo MENOS lo que la direccion va a tardar de
+    verdad (estimado). Si el motor es mas rapido que el techo, ese es el
+    relleno; si es mas lento, no hay nada que rellenar y no se pierde tiempo
+    pausando en balde.
     """
     frac = PUNTOS.get(punto)
     if frac is None:
         return 0.0
+    obj = objetivo_s() if objetivo is None else float(objetivo)
+    if (time.time() - float(t0)) >= obj:
+        return 0.0
+    util = obj - estimar(paginas)
+    if util <= 0:
+        return 0.0
     j = jitter(valor)
-    seg = deficit(t0, objetivo) * frac * random.uniform(1.0 - j, 1.0 + j)
+    seg = util * frac * random.uniform(1.0 - j, 1.0 + j)
     return max(0.0, min(MAX_PAUSA, seg))
 
 

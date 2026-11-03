@@ -725,7 +725,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                     continue
                 return res
 
-            await _pausa(perfil.pausa(inicio, "antes_f10", objetivo))
+            await _pausa(perfil.pausa(inicio, "antes_f10", objetivo, paginas=1))
             await pf.step(s, "f10", "press_keys", {"keys": ["f10"]})
             await asyncio.sleep(0.8)
 
@@ -818,7 +818,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                 aviso_ficha = escribe_ficha(id_, ficha or "")
                 if aviso_ficha:
                     print(f"  aviso: {aviso_ficha}", flush=True)
-            await _pausa(perfil.pausa(inicio, "tras_ficha", objetivo))
+            await _pausa(perfil.pausa(inicio, "tras_ficha", objetivo, paginas=1))
 
             if solo_ficha:
                 nota = ("solo ficha: no se extrajo (la extraccion de esta "
@@ -883,7 +883,8 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                     continue
                 bloques += 1
                 hechos_hoy += 1
-                await _pausa(perfil.pausa(inicio, "entre_paginas", objetivo))
+                await _pausa(perfil.pausa(inicio, "entre_paginas", objetivo,
+                                         paginas=(bloques + saltadas)))
                 # B6 por pagina: lo pegado se registra YA. Si AnyDesk corta la
                 # sesion en la pagina siguiente, el ledger dice cuantas
                 # quedaron pegadas y la corrida reanuda ahi en vez de repetir.
@@ -930,7 +931,8 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                 await volver_formulario(s, hwnd)
             # En dry no se vuelve aqui: lo hace main() con entrar_formulario(),
             # que cubre tambien los caminos de halt y error.
-            await _pausa(perfil.pausa(inicio, "cierre", objetivo))
+            await _pausa(perfil.pausa(inicio, "cierre", objetivo,
+                                     paginas=(bloques + saltadas)))
             res["notas"] = (f"{bloques} bloques x {FILAS_POR_BLOQUE} filas"
                             + (f"; {saltadas} paginas vacias saltadas"
                                if saltadas else "")
