@@ -103,8 +103,8 @@ tinta 8 ms · diff 10 ms.
 | Tarea                                  | Estado                                            | Commit    |
 | -------------------------------------- | ------------------------------------------------- | --------- |
 | T1 puerto a `master`                   | **HECHO**                                         | `046190b` |
-| T2 modularización 0.3                  | PENDIENTE (riesgo medio; la suite es la red)      | -         |
-| T3 contrato de columnas de la hoja     | PENDIENTE                                         | -         |
+| T2 modularización 0.3                  | HECHO: matriz_buscar / matriz_ficha / matriz_extraer / orquesta       | pendiente |
+| T3 contrato de columnas de la hoja     | HECHO: tools/hoja.py, guard antes de pegar (fallo abierto) | `6b60c2c` |
 | T4 ahorro de OCR                       | **HECHO** (T4': el OCR del listado se reutiliza) | dbfa5c9 |
 | T5 cambio de ventana por taskbar       | HECHO (`552f524` + `d217614`)                 | `d217614`   |
 | T6 fusión de teclas / fuera `sel_box`  | **PARCIAL**: E4 HECHO, E3 CANCELADO               | -         |
@@ -258,8 +258,8 @@ la tarea **no requiere** el modo "lado a lado" que se había propuesto.
 | T6 E4 (fuera `sel_box` y `ciclo-sel`) | HECHO | `279216b` |
 | T7 tope de reintentos por dirección | HECHO | `279216b` |
 | T6 E3 (fusionar teclas del bloque) | CANCELADO | - |
-| T2 modularización | PENDIENTE | - |
-| T3 contrato de columnas | PENDIENTE | - |
+| T2 modularización | HECHO (modulos tematicos) | `por commit` |
+| T3 contrato de columnas | HECHO (tools/hoja.py) | `6b60c2c` |
 | T5 cambio de ventana por taskbar | HECHO (`552f524` + `d217614`) | `d217614` |
 
 Suite al cierre: **292 tests OK**. Motor medido en vivo: 24–25 s/dirección

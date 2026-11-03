@@ -33,6 +33,7 @@ import time
 from pathlib import Path
 
 import ciclo
+import matriz_extraer
 import credenciales
 import enfocar
 import login
@@ -47,6 +48,10 @@ import traza
 import vigia
 from _mcp import connect, need_hwnd
 from estado import captura, clasificar, ocr_text
+from matriz_buscar import (NOMBRE, CALLE, CASA, INK_MIN, buscar,
+                            verifica_texto)
+from matriz_ficha import (escribe_ficha, lee_direcciones,
+                          merge_fichas_pendientes, normaliza_dir)
 
 RAIZ = Path(__file__).resolve().parent.parent
 DATOS = RAIZ / "datos" / "datos.csv"
@@ -57,11 +62,7 @@ CAMPOS_LEDGER = ["id", "direccion_parte1", "direccion_parte2", "comuna",
                   "filas_copiadas", "hora_inicio", "hora_fin", "evidencia",
                   "notas", "reintentos"]
 REINTENTOS = 1
-INK_MIN = pf.INK_MIN
 # Indices de fila del formulario CONSULTA EDIFICIO (rows.detect devuelve 8).
-NOMBRE = 0
-CALLE = 1
-CASA = 2
 # El bloque del operador son 15 filas (7 abajo + 14 de alto).
 FILAS_POR_BLOQUE = 15
 MAX_PAGINAS = 40
@@ -85,87 +86,6 @@ def obedece() -> str:
         time.sleep(1.0)
     return control()
 
-
-
-def lee_direcciones(ruta: Path = None) -> list[dict]:
-    """Entrada del operador: direcciones.csv con parte1;parte2;ficha.
-
-    Excel en espanol guarda con ';'. La columna ficha la llena el agente.
-    El id se deriva del numero de fila: D01, D02...
-    """
-    ruta = ruta or (RAIZ / "datos" / "direcciones.csv")
-    if not ruta.exists():
-        raise SystemExit(f"falta {ruta}")
-    with open(ruta, encoding="utf-8-sig", newline="") as fh:
-        filas = list(csv.DictReader(fh, delimiter=";"))
-    salida = []
-    for i, f in enumerate(filas, 1):
-        p1 = (f.get("parte1") or "").strip()
-        p2 = (f.get("parte2") or "").strip()
-        if not p1 and not p2:
-            continue
-        salida.append({
-            "id": f"D{i:02d}",
-            "direccion_parte1": p1,
-            "direccion_parte2": p2,
-            "comuna": "BOG",
-            "cuenta_matriz_esperada": "",
-            "ficha": (f.get("ficha") or "").strip(),
-        })
-    return salida
-
-
-def escribe_ficha(id_, ficha: str, ruta: Path = None) -> str:
-    """Devuelve la ficha del edificio a la columna C (una celda multilinea).
-
-    El CSV suele estar abierto en Excel y en Windows eso bloquea la escritura.
-    La extraccion NO se tumba por eso: se reintenta y, si sigue bloqueado, la
-    ficha queda en datos/fichas_pendientes.csv para volcar a mano.
-
-    Devuelve "" si se escribio, o el motivo del bloqueo.
-    """
-    ruta = ruta or (RAIZ / "datos" / "direcciones.csv")
-    if not ruta.exists() or not ficha:
-        return ""
-    try:
-        n = int(id_[1:]) - 1
-    except (ValueError, IndexError):
-        return ""
-    with open(ruta, encoding="utf-8-sig", newline="") as fh:
-        filas = list(csv.DictReader(fh, delimiter=";"))
-    if not 0 <= n < len(filas):
-        return ""
-    filas[n]["ficha"] = ficha
-    # utf-8-sig: Excel en espanol reabre el CSV sin BOM como ANSI y garabatea
-    # las tildes de la ficha (el dato viene del portapapeles del 5250).
-    for _ in range(3):
-        try:
-            with open(ruta, "w", encoding="utf-8-sig", newline="") as fh:
-                w = csv.DictWriter(fh, fieldnames=["parte1", "parte2", "ficha"],
-                                   delimiter=";", quoting=csv.QUOTE_MINIMAL)
-                w.writeheader()
-                for f in filas:
-                    w.writerow({"parte1": f.get("parte1") or "",
-                                "parte2": f.get("parte2") or "",
-                                "ficha": f.get("ficha") or ""})
-            return ""
-        except PermissionError:
-            time.sleep(0.4)
-    # Sigue bloqueado: la ficha no se pierde. Se guarda CON la direccion a la
-    # que pertenece: el id es posicional (D01..D0n) y si el operador cambia una
-    # fila del CSV entre corridas, volcar por id pondria la ficha de un edificio
-    # en la fila de otro.
-    respaldo = ruta.parent / "fichas_pendientes.csv"
-    try:
-        with open(respaldo, "a", encoding="utf-8", newline="") as fh:
-            csv.writer(fh, delimiter=";").writerow(
-                [id_,
-                 (filas[n].get("parte1") or "").strip(),
-                 (filas[n].get("parte2") or "").strip(),
-                 (ficha or "").replace("\r\n", " | ").replace("\n", " | ")])
-    except OSError:
-        pass
-    return f"CSV bloqueado (abierto en Excel): la ficha quedo en {respaldo.name}"
 
 
 async def volver_formulario(s, hwnd: int, intentos: int = 3) -> bool:
@@ -360,122 +280,6 @@ def anydesk_vivo(hwnd: int) -> bool:
         # (ventana cerrada a mitad, pywin32 ausente): sin ventana no hay sesion
         # viva, y este guard nunca debe tumbar el item.
         return False
-
-
-def merge_fichas_pendientes() -> int:
-    """Vuelca las fichas del respaldo (CSV bloqueado por Excel) al CSV.
-
-    Upsert por id: gana la ultima. El respaldo se borra solo si el merge
-    termino bien, para no perder fichas. Se llama al arrancar la corrida.
-
-    El respaldo nuevo trae 4 campos (id; parte1; parte2; ficha): antes de
-    volcarla se comprueba que la direccion siga siendo la misma que la de esa
-    fila del CSV. Con el id posicional, un cambio de fila del operador pondria
-    la ficha de un edificio en otro. Las de 2 campos (formato viejo) se vuelcan
-    sin esa comprobacion porque no traen la direccion.
-    """
-    if not PENDIENTES.exists():
-        return 0
-    try:
-        with open(PENDIENTES, encoding="utf-8-sig", newline="") as f:
-            filas = [r for r in csv.reader(f, delimiter=";") if r and r[0].strip()]
-    except (OSError, csv.Error, UnicodeDecodeError):
-        return 0
-    actuales = {f.get("id"): f for f in lee_direcciones()}
-    recuperadas = 0
-    fallidas = []
-    for r in filas:
-        if len(r) < 2:
-            continue
-        id_ = r[0].strip()
-        if len(r) >= 4:
-            cur = actuales.get(id_) or {}
-            if (normaliza_dir(r[1]) != normaliza_dir(cur.get("direccion_parte1")) or
-                    normaliza_dir(r[2]) != normaliza_dir(cur.get("direccion_parte2"))):
-                print(f"  respaldo {id_}: la direccion cambio "
-                      f"({r[1]} {r[2]}); se descarta la ficha", flush=True)
-                continue
-            ficha = r[3] if len(r) > 3 else ""
-        else:
-            ficha = r[1]
-        if escribe_ficha(id_, ficha) == "":
-            recuperadas += 1
-        else:
-            fallidas.append(r)
-    # El respaldo se borra SOLO si se recuperaron todas. Si alguna fallo, se
-    # reescribe con las fallidas: escribe_ficha ya las re-appendo al mismo
-    # archivo, asi que reescribir evita que se dupliquen en cada corrida.
-    try:
-        if fallidas:
-            with open(PENDIENTES, "w", encoding="utf-8", newline="") as f:
-                csv.writer(f, delimiter=";").writerows(fallidas)
-        else:
-            PENDIENTES.unlink(missing_ok=True)
-    except OSError:
-        pass
-    return recuperadas
-
-
-async def buscar(s, hwnd: int, det: list, parte1: str, parte2: str) -> None:
-    """Macro de busqueda validada: clic, flechas, step1, +, step2, +, F10.
-
-    Limpieza del campo Nombre con la secuencia del operador (28/10): un clic
-    en la celda 1, flecha derecha, flecha izquierda, Suprimir y el '+' del
-    bloque numerico. Eso limpia el campo y salta al siguiente (Calle). Antes se
-    sobrescribia con 24 espacios: 5.5 s por direccion y fragil.
-    """
-    nombre = det[NOMBRE]
-    calle = det[CALLE]
-    # UN solo clic pegado al borde izquierdo del subrayado (= celda 1). Dos clics
-    # al mismo punto se leen como DOBLE CLIC, seleccionan el campo entero y dejan
-    # el teclado inhibido (bug medido el 27/10). No reintroducir el segundo clic.
-    await pf.step(s, "nombre_clic", "click_point",
-                  {"x": nombre["field_x"] + 2, "y": nombre["cy"]})
-    await asyncio.sleep(0.2)
-    # derecha + izquierda + Suprimir en UNA sola llamada: el MCP cobra por
-    # llamada (foco + latencia ~150 ms) y la secuencia es la misma.
-    await pf.step(s, "nombre_sentar", "press_keys",
-                  {"keys": ["right", "left", "delete"]})
-    # El '+' del bloque numerico (Field Exit) deja el cursor en Calle.
-    await pf.step(s, "nombre_mas", "press_keys", {"keys": ["add"]})
-    await asyncio.sleep(0.2)
-    await pf.step(s, "calle_clic", "click_point",
-                  {"x": calle["field_x"] + 2, "y": calle["cy"]})
-    await asyncio.sleep(0.2)
-    await pf.step(s, "calle_sentar", "press_keys",
-                  {"keys": ["right", "left", "delete"]})
-    await pf.step(s, "step1", "write_to_anydesk", {"command": parte1})
-    await pf.step(s, "plus1", "press_keys", {"keys": ["add"]})
-    await pf.step(s, "step2", "write_to_anydesk", {"command": parte2})
-    await pf.step(s, "plus2", "press_keys", {"keys": ["add"]})
-    # Prellenado del bloque, validado en vivo el 27/10: tras el "+" el cursor
-    # cae en Comunidad (BOG) y su "+" hace el ultimo salto a Division (TVC).
-    # Sin esto F10 busca con Comunidad/Division vacias y no encuentra nada.
-    await pf.step(s, "bog", "write_to_anydesk", {"command": "BOG"})
-    await pf.step(s, "plus3", "press_keys", {"keys": ["add"]})
-    await pf.step(s, "tvc", "write_to_anydesk", {"command": "TVC"})
-
-
-async def verifica_texto(hwnd: int) -> tuple[bool, str]:
-    """B2: el texto quedo en Calle.
-
-    No se exige Nombre vacio: el formulario conserva texto de busquedas
-    anteriores y este emulador no borra (delete no borra, home salta al primer
-    campo). Si Calle tiene tinta, la escritura llego donde tenia que llegar.
-
-    El OCR del formulario entero se paga SOLO cuando algo va mal (o con
-    MATRIZ_VERBOSE=1): leerlo costaba ~1 s por direccion y era un print.
-    """
-    img, _vp, det = rowdet.detect(hwnd)
-    if len(det) < 3:
-        return False, "no se detectaron filas del formulario"
-    tinta_calle = pf.ink(img, det[CALLE])
-    if tinta_calle < INK_MIN or VERBOSE:
-        # Un residuo en No.Casa o Comunidad solo se descubre asi.
-        print(f"FORMULARIO antes de F10: {ocr_text(img)[:400]}", flush=True)
-    if tinta_calle < INK_MIN:
-        return False, f"Calle vacio (tinta {tinta_calle})"
-    return True, f"Calle ok (tinta {tinta_calle})"
 
 
 def hay_dialogo(hwnd: int) -> bool:
@@ -890,7 +694,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                 # Las 7 bajadas solo en el PRIMER bloque que se extrae: si las
                 # primeras paginas venian sin suscriptores y se saltaron, el
                 # cursor del 5250 sigue sin moverse de su punto.
-                extra = await ciclo.extrae(s, hwnd, dry, bajar=(hechos_hoy == 0),
+                extra = await matriz_extraer.extrae_bloque(s, hwnd, dry, bajar=(hechos_hoy == 0),
                                            previo=pagina.ULTIMA)
                 if extra == "vacia":
                     # La pagina existe pero la columna Suscript viene vacia: no
@@ -978,11 +782,6 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
         except Exception as exc:  # noqa: BLE001 - un item nunca tumba la tanda
             res["notas"] = f"{type(exc).__name__}: {exc}"
             return res
-
-
-def normaliza_dir(t) -> str:
-    """Texto de direccion comparable: mayusculas y solo letras/digitos."""
-    return re.sub(r"[^A-Z0-9]+", "", str(t or "").upper())
 
 
 def reanuda_desde(hechos: dict, fila: dict) -> int:

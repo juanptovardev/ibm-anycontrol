@@ -8,6 +8,8 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
 import loop as L
+import matriz_extraer
+import matriz_ficha
 import preflight_auto as pf
 
 
@@ -61,8 +63,8 @@ class TestMergeFichasPendientes(unittest.TestCase):
                 "D02;Cuenta: 2 | EDIFICIO DOS | CL 2\n"
                 "D03;Cuenta: 3 | EDIFICIO TRES | CL 3\n",
                 encoding="utf-8")
-            with patch.object(L, "PENDIENTES", pend), \
-                    patch.object(L, "escribe_ficha",
+            with patch.object(matriz_ficha, "PENDIENTES", pend), \
+                    patch.object(matriz_ficha, "escribe_ficha",
                                  lambda i, f: escritas.__setitem__(i, f) or ""):
                 n = L.merge_fichas_pendientes()
             self.assertEqual(n, 3)  # cuenta escrituras ok, no ids distintos
@@ -74,8 +76,8 @@ class TestMergeFichasPendientes(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             pend = Path(tmp) / "fichas_pendientes.csv"
             pend.write_text("D03;Cuenta: 1 | UNO | CL 1\n", encoding="utf-8")
-            with patch.object(L, "PENDIENTES", pend), \
-                    patch.object(L, "escribe_ficha",
+            with patch.object(matriz_ficha, "PENDIENTES", pend), \
+                    patch.object(matriz_ficha, "escribe_ficha",
                                  lambda i, f: "CSV bloqueado"):
                 n = L.merge_fichas_pendientes()
             self.assertEqual(n, 0)
@@ -83,7 +85,7 @@ class TestMergeFichasPendientes(unittest.TestCase):
 
     def test_sin_respaldo_no_hace_nada(self):
         with tempfile.TemporaryDirectory() as tmp:
-            with patch.object(L, "PENDIENTES", Path(tmp) / "no_existe.csv"):
+            with patch.object(matriz_ficha, "PENDIENTES", Path(tmp) / "no_existe.csv"):
                 self.assertEqual(L.merge_fichas_pendientes(), 0)
 
     def test_fallo_parcial_conserva_solo_las_fallidas(self):
@@ -98,8 +100,8 @@ class TestMergeFichasPendientes(unittest.TestCase):
             def escribe(id_, ficha):
                 return "" if id_ == "D01" else "CSV bloqueado"
 
-            with patch.object(L, "PENDIENTES", pend), \
-                    patch.object(L, "escribe_ficha", escribe):
+            with patch.object(matriz_ficha, "PENDIENTES", pend), \
+                    patch.object(matriz_ficha, "escribe_ficha", escribe):
                 n = L.merge_fichas_pendientes()
             self.assertEqual(n, 1)
             self.assertTrue(pend.exists())
@@ -329,7 +331,7 @@ class TestPaginasVistas(unittest.IsolatedAsyncioTestCase):
                 patch.object(L, "espera_estado", fake_espera), \
                 patch.object(L.pf, "step", fake_step), \
                 patch.object(L, "traza") as traza, \
-                patch.object(L, "ciclo") as ciclo, \
+                patch.object(L, "matriz_extraer") as matriz_extraer, \
                 patch.object(L, "pagina") as pagina, \
                 patch.object(L, "escribe_ficha", lambda i, f: ""), \
                 patch.object(L, "ledger_escribe", filas_ledger.append), \
@@ -340,7 +342,7 @@ class TestPaginasVistas(unittest.IsolatedAsyncioTestCase):
                 patch.object(L.asyncio, "sleep", fake_sleep):
             rowdet.detect.return_value = (MagicMock(), {}, filas)
             traza.evento = lambda *a, **k: None
-            ciclo.extrae = fake_extrae
+            matriz_extraer.extrae_bloque = fake_extrae
             pagina.volver = fake_volver
             pagina.avanza = fake_avanza
             decisiones = {"n": 0}
