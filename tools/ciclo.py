@@ -86,9 +86,9 @@ async def extrae(s, hwnd: int, dry: bool = False, bajar: bool = True,
         await pf.step(s, "limpiar", "press_keys", {"keys": ["escape"]})
         print("DRY: seleccionada, sin copiar", flush=True)
         return "ok"
-    await cp._copiar(s)
+    filas = await cp._copiar(s)
     await cp._pegar(s, hwnd)
-    await cp._posicionar(s, hwnd)
+    await cp._posicionar(s, hwnd, filas)
     return "ok"
 
 

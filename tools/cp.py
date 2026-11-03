@@ -30,6 +30,7 @@ from PIL import Image
 import preflight_auto as pf
 import native_shot
 import perfil
+import recepcion
 from _mcp import connect, need_hwnd
 from estado import (captura, clasificar, clasificar_rapido, ocr_text,
                     tipo_pixeles)
@@ -124,10 +125,27 @@ async def _seleccionar(s, hwnd: int, dry: bool) -> tuple:
     return img, caja
 
 
-async def _copiar(s) -> None:
+async def _copiar(s) -> int:
+    """Copia el bloque y devuelve CUANTAS lineas con datos tiene.
+
+    El portapapeles local SI recibe lo que se copia en el 5250 (medido: la
+    ficha del edificio llego al portapapeles local con sus 3 lineas). Contar
+    las lineas con contenido dice si el bloque pegado es de UNA fila o de
+    varias, y de eso depende como se deja el cursor para el pegado siguiente.
+
+    Si la lectura falla se devuelve 0 y el llamador usa el comportamiento
+    historico (Ctrl+Abajo), que es el que nunca ha roto nada.
+    """
     # El portapapeles local es instantaneo: 0.25 s aqui era espera muerta.
     await pf.step(s, "ctrl_c", "copy_clipboard", {})
     await asyncio.sleep(0.1)
+    try:
+        texto = recepcion._portapapeles() or ""
+    except Exception:  # noqa: BLE001 - si no se puede leer, se sigue igual
+        return 0
+    lineas = [l for l in texto.replace("\r\n", "\n").split("\n") if l.strip()]
+    print(f"A2 lineas copiadas con datos: {len(lineas)}", flush=True)
+    return len(lineas)
 
 
 async def _espera_pegado(hwnd: int, antes, intentos: int = 6,
@@ -206,9 +224,25 @@ async def _pegar(s, hwnd: int) -> None:
     native_shot.save(img_post, "cp-post-paste")
 
 
-async def _posicionar(s, hwnd: int) -> None:
-    await pf.step(s, "ctrl_down", "press_keys", {"keys": ["ctrl", "down"]})
-    await pf.step(s, "abajo", "press_keys", {"keys": ["down"]})
+async def _posicionar(s, hwnd: int, filas: int = 0) -> None:
+    """Deja la celda lista para el siguiente pegado.
+
+    Bloque de VARIAS filas (el normal): Ctrl+Abajo lleva al final del bloque
+    pegado y un Abajo deja la celda siguiente. Comportamiento historico,
+    validado en vivo.
+
+    Bloque de UNA sola fila: en Google Sheets Ctrl+Abajo salta al siguiente
+    bloque de datos de la columna, o al FINAL de la hoja si ya no hay mas.
+    Medido el 03/11: la direccion CR 14 119-33, cuya segunda pagina tenia
+    una sola direccion con suscriptor, dejo el cursor al final de la hoja y
+    los pegados siguientes se fueron para alla. Con una sola fila basta un
+    Abajo.
+    """
+    if filas == 1:
+        await pf.step(s, "abajo", "press_keys", {"keys": ["down"]})
+    else:
+        await pf.step(s, "ctrl_down", "press_keys", {"keys": ["ctrl", "down"]})
+        await pf.step(s, "abajo", "press_keys", {"keys": ["down"]})
     pf.shot(hwnd, "cp-listo")
 
 
@@ -227,9 +261,9 @@ async def _secuencia(hwnd: int, dry: bool) -> bool:
                 await pf.step(s, "limpiar", "press_keys", {"keys": ["escape"]})
                 print("DRY: seleccion medida, no se copio nada", flush=True)
                 return True
-            await _copiar(s)
+            filas = await _copiar(s)
             await _pegar(s, hwnd)
-            await _posicionar(s, hwnd)
+            await _posicionar(s, hwnd, filas)
         except pf.Halt as exc:
             # Se captura DENTRO del context manager: si sale de el, anyio lo
             # envuelve en ExceptionGroup y se pierde el motivo.
