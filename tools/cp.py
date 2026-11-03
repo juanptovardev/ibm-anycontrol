@@ -32,6 +32,7 @@ import native_shot
 import perfil
 import recepcion
 import ventana
+import hoja
 from _mcp import connect, need_hwnd
 from estado import (captura, clasificar, clasificar_rapido, ocr_text,
                     tipo_pixeles)
@@ -221,7 +222,13 @@ async def _pegar(s, hwnd: int) -> None:
           f"error={st.get('error')}", flush=True)
     if not no_ibm:
         raise pf.Halt("G2 no se pudo llegar a la hoja: no se pega")
-    # La captura "antes" es la del sondeo de G2: no hace falta otra.
+    # Contrato de columnas (T3): antes de pegar se comprueba que la pantalla
+    # es la hoja esperada (DIRECCION / EDIFICIO / SUSCRIPTOR). La captura
+    # "antes" es la del sondeo de G2: no hace falta otra.
+    ok_hoja, nota_hoja = hoja.verifica(antes)
+    print(f"G2b contrato de columnas: {nota_hoja}", flush=True)
+    if not ok_hoja:
+        raise pf.Halt(f"G2b {nota_hoja}: no se pega")
     await pf.step(s, "ctrl_shift_v", "paste_clipboard", {"shift": True})
     diff, img_post = await _espera_pegado(hwnd, antes)
     if diff < PASTE_MIN_DIFF:
