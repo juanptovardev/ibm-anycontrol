@@ -17,6 +17,7 @@ import asyncio
 import sys
 
 import preflight_auto as pf
+import ventana
 from _mcp import connect, need_hwnd
 from estado import (captura, clasificar_rapido, clasificar_texto, ocr_completo,
                     tipo_pixeles)
@@ -46,33 +47,38 @@ def decide(estado: str | None, no_ibm: bool = False) -> str:
 
 
 async def volver(s, hwnd: int, intentos: int = 3, sondeos: int = 4) -> dict:
-    """Alt+Tab de regreso al 5250 y verificacion de que es la pantalla IBM.
+    """Vuelve al 5250 por el icono de su taskbar y verifica el listado.
 
-    Medido el 28/10: el remoto tarda 1-3 s en procesar el Alt+Tab, asi que una
-    espera fija no basta. Se sondea la pantalla y, si sigue en el navegador, se
-    reenvia el Alt+Tab.
+    El 03/11 el Alt+Tab dejo de cambiar de ventana (la tecla de sistema no
+    llega al escritorio remoto con el 5250 y Chrome maximizados). El clic en
+    el icono de la taskbar si funciona; el icono se localiza por imagen, de
+    modo que no depende de una coordenada fija. `ventana.ir_a` cae al
+    Alt+Tab si no encuentra el icono.
     """
-    for i in range(intentos):
-        await pf.step(s, f"volver_alt_tab_{i}", "press_keys", {"keys": ["alt", "tab"]})
-        for _ in range(sondeos):
+    ok = await ventana.ir_a(s, hwnd, ventana.DESTINO_IBM, intentos=2,
+                            espera=0.5)
+    if not ok:
+        raise pf.Halt("volver: no se pudo volver al 5250 (ni por icono ni Alt+Tab)")
+    for _ in range(sondeos):
+        img, _vp = captura(hwnd)
+        if tipo_pixeles(img) == "navegador":
+            # Seguimos en el navegador: otro sondeo. El clasificador por
+            # pixeles son 20 ms en vez de ~405 ms de OCR (medido: 228
+            # capturas reales, margen de 4x entre los dos grupos).
             await asyncio.sleep(ESPERA_TAB)
-            img, _vp = captura(hwnd)
-            if tipo_pixeles(img) == "navegador":
-                # Seguimos en el navegador: otro sondeo. El clasificador por
-                # pixeles son 20 ms en vez de ~405 ms de OCR (medido: 228
-                # capturas reales, margen de 4x entre los dos grupos).
-                continue
-            st = clasificar_rapido(img)
-            senales = st.get("senales") or {}
-            estado = st.get("estado")
-            if estado in IBM_OK:
-                print(f"VOLVER pantalla: estado={estado} (alt+tab {i + 1})", flush=True)
-                return st
-            if not senales.get("no_ibm"):
-                # Ya se esta en el 5250, pero no en el listado.
-                print(f"VOLVER pantalla: estado={estado} no_ibm=False", flush=True)
-                raise pf.Halt(f"volver: no se llego al listado (estado {estado})")
-    raise pf.Halt("volver: el remoto sigue en el navegador tras varios Alt+Tab")
+            continue
+        st = clasificar_rapido(img)
+        senales = st.get("senales") or {}
+        estado = st.get("estado")
+        if estado in IBM_OK:
+            print(f"VOLVER pantalla: estado={estado} (por icono)", flush=True)
+            return st
+        if not senales.get("no_ibm"):
+            # Ya se esta en el 5250, pero no en el listado.
+            print(f"VOLVER pantalla: estado={estado} no_ibm=False", flush=True)
+            raise pf.Halt(f"volver: no se llego al listado (estado {estado})")
+        await asyncio.sleep(ESPERA_TAB)
+    raise pf.Halt("volver: el 5250 no llego al listado tras varios sondeos")
 
 
 async def avanza(s, hwnd: int, intentos: int = 3,

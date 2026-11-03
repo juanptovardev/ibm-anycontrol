@@ -31,6 +31,7 @@ import preflight_auto as pf
 import native_shot
 import perfil
 import recepcion
+import ventana
 from _mcp import connect, need_hwnd
 from estado import (captura, clasificar, clasificar_rapido, ocr_text,
                     tipo_pixeles)
@@ -169,12 +170,14 @@ async def _espera_pegado(hwnd: int, antes, intentos: int = 6,
 
 
 async def _pegar(s, hwnd: int) -> None:
-    """Alt+Tab -> esperar a que el remoto llegue al navegador -> pegar.
+    """Ir a la hoja (por el icono de la taskbar) -> esperar -> pegar.
 
-    El Alt+Tab se entrega al remoto CON RETARDO: medido el 28/10, a los
-    0.45s la pantalla seguia siendo el listado del 5250 (G2 abortaba) y el
-    navegador aparecia un par de segundos despues. Se sondea hasta 3.6s y,
-    si el destino sigue sin ser el navegador, se reenvia el Alt+Tab una vez.
+    El 03/11 el Alt+Tab dejo de cambiar de ventana: la tecla de sistema no
+    llega al escritorio remoto con el 5250 y Chrome ambos maximizados
+    (medido con la sonda de teclas: la pantalla no cambiaba ni desde el
+    5250 ni desde Chrome). La via que si funciona es hacer clic en el icono
+    de la taskbar del escritorio remoto, localizado por imagen para no
+    depender de una coordenada fija. El Alt+Tab queda como recurso.
     """
     async def _espera_destino(sondeos: int) -> tuple:
         """Sondea el destino del Alt+Tab hasta que sea el navegador.
@@ -200,17 +203,24 @@ async def _pegar(s, hwnd: int) -> None:
                 return st, img
         return st, img
 
-    await pf.step(s, "alt_tab", "press_keys", {"keys": ["alt", "tab"]})
-    st, antes = await _espera_destino(6)
+    # El 03/11 el Alt+Tab dejo de cambiar de ventana (la tecla de sistema no
+    # llega al escritorio remoto con el 5250 y Chrome maximizados). La via que
+    # si funciona es hacer clic en el icono de la taskbar del escritorio
+    # remoto; el icono se localiza por imagen para no depender de una
+    # coordenada fija. `ventana.ir_a` cae al Alt+Tab si no lo encuentra.
+    print("G2 se busca el navegador por su icono de la taskbar", flush=True)
+    await ventana.ir_a(s, hwnd, ventana.DESTINO_NAVEGADOR, intentos=2,
+                       espera=0.5)
+    st, antes = await _espera_destino(3)
     if not (st.get("senales") or {}).get("no_ibm"):
-        print("G2 el Alt+Tab no ha llegado al navegador: se reenvia", flush=True)
-        await pf.step(s, "alt_tab2", "press_keys", {"keys": ["alt", "tab"]})
+        print("G2 el icono no trajo el navegador: Alt+Tab", flush=True)
+        await pf.step(s, "alt_tab", "press_keys", {"keys": ["alt", "tab"]})
         st, antes = await _espera_destino(5)
     no_ibm = bool((st.get("senales") or {}).get("no_ibm"))
     print(f"G2 pantalla destino: estado={st.get('estado')} no_ibm={no_ibm} "
           f"error={st.get('error')}", flush=True)
     if not no_ibm:
-        raise pf.Halt("G2 tras Alt+Tab sigue siendo la pantalla IBM: no se pega")
+        raise pf.Halt("G2 no se pudo llegar a la hoja: no se pega")
     # La captura "antes" es la del sondeo de G2: no hace falta otra.
     await pf.step(s, "ctrl_shift_v", "paste_clipboard", {"shift": True})
     diff, img_post = await _espera_pegado(hwnd, antes)
