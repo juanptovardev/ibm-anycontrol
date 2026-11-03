@@ -48,7 +48,8 @@ SEL_MIN_ANCHO = 500   # medido: el bloque de 72 columnas mide 690 px de ancho
 SEL_ROW_MIN = 300     # fila de borde: 683 px medidos en captura real
 SEL_COL_MIN = 100     # columna de borde: 309 px medidos en captura real
 SEL_MIN_ALTO = 150    # 15 filas ~320 px; 150 px = piso de 8 filas
-PASTE_MIN_DIFF = 3000  # pixeles cambiados para aceptar que el pegado ocurrio
+PASTE_MIN_DIFF = 3000  # pixeles cambiados para dar el pegado por bueno
+PASTE_MIN_CAMBIO = 800  # cambio minimo para creer que SI se pego algo (bloque de 1 fila)
 
 
 def _es_borde(r: int, g: int, b: int) -> bool:
@@ -150,13 +151,21 @@ async def _copiar(s) -> int:
     return len(lineas)
 
 
-async def _espera_pegado(hwnd: int, antes, intentos: int = 6,
-                         espera: float = 0.12) -> tuple:
-    """Espera ACTIVA a que el pegado se vea: captura y compara cada 120 ms.
+async def _espera_pegado(hwnd: int, antes, intentos: int = 10,
+                         espera: float = 0.2) -> tuple:
+    """Espera ACTIVA a que el pegado se vea: captura y compara cada 200 ms.
 
     Antes se dormia 0,6 s fijos y luego se comparaba; el pegado se ve a los
     ~150 ms, asi que se perdian ~450 ms por bloque. Se capturan sin guardar
     (solo la ultima se guarda como evidencia).
+
+    Son 2 s de margen (10 x 200 ms) a proposito: un pegado que el remoto pinta
+    tarde NO se puede confundir con un pegado que no ocurrio, porque el
+    reintento automatico (que existia aqui) duplicaba el bloque en la hoja.
+    Medido el 27/10: D03 quedo pegada dos veces (filas 36-50 y 51-65) porque
+    el primer Ctrl+Shift+V si habia funcionado y el render tardo mas que la
+    espera. Un bloque perdido se reanuda; uno duplicado hay que borrarlo a
+    mano y contamina el dato.
     """
     mejor = 0
     img = antes
@@ -231,13 +240,15 @@ async def _pegar(s, hwnd: int) -> None:
         raise pf.Halt(f"G2b {nota_hoja}: no se pega")
     await pf.step(s, "ctrl_shift_v", "paste_clipboard", {"shift": True})
     diff, img_post = await _espera_pegado(hwnd, antes)
-    if diff < PASTE_MIN_DIFF:
-        print(f"G3 sin cambio visible ({diff}px): un reintento", flush=True)
-        await pf.step(s, "ctrl_shift_v_retry", "paste_clipboard", {"shift": True})
-        diff, img_post = await _espera_pegado(hwnd, antes)
     print(f"G3 diff={diff}px", flush=True)
-    if diff < PASTE_MIN_DIFF:
+    if diff < PASTE_MIN_CAMBIO:
+        # No se reintenta el Ctrl+Shift+V: si el primer pegado si funciono y
+        # el remoto solo tardo en pintarlo, reintentar DUPLICA el bloque.
         raise pf.Halt("G3 el pegado no se ve: Ctrl+C no llego al portapapeles remoto")
+    if diff < PASTE_MIN_DIFF:
+        # Algo se pego (bloque de una sola fila cambio menos pixeles de lo
+        # normal). Se acepta y se deja constancia; no se reintenta.
+        print(f"G3 cambio pequeno ({diff}px): se acepta, no se reintenta", flush=True)
     native_shot.save(img_post, "cp-post-paste")
 
 

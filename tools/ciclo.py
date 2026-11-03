@@ -36,6 +36,11 @@ from estado import ocr_completo
 # cambia, la pagina anterior se volveria a pegar: duplicado).
 ULTIMA_IMG = None
 
+# Filas REALES del ultimo bloque pegado (cp._copiar cuenta las lineas con
+# datos del portapapeles). Lo usa el bucle para el ledger: suponer 15 filas
+# por bloque inflaba la cifra, porque la ultima pagina casi nunca trae 15.
+ULTIMAS_FILAS = 0
+
 
 async def extrae(s, hwnd: int, dry: bool = False, bajar: bool = True,
                  previo: dict | None = None) -> str:
@@ -49,7 +54,7 @@ async def extrae(s, hwnd: int, dry: bool = False, bajar: bool = True,
     palabras). Se reutiliza para no pagar otra captura ni otro OCR de la MISMA
     pantalla.
     """
-    global ULTIMA_IMG
+    global ULTIMA_IMG, ULTIMAS_FILAS
     if bajar:
         await pf.step(s, "bajar_inicio", "press_keys",
                       {"keys": ["down"] * cp.BAJAR_INICIO,
@@ -86,6 +91,7 @@ async def extrae(s, hwnd: int, dry: bool = False, bajar: bool = True,
     vacia, motivo = pagina_vacia(img, t, texto)
     if vacia:
         print(f"A1 pagina sin suscriptores ({motivo}): no se copia", flush=True)
+        ULTIMAS_FILAS = 0
         return "vacia"
     await pf.step(s, "shift_click", "click_point",
                   {"x": t["x"], "y": t["y"], "shift": True})
@@ -105,6 +111,7 @@ async def extrae(s, hwnd: int, dry: bool = False, bajar: bool = True,
     filas = await cp._copiar(s)
     await cp._pegar(s, hwnd)
     await cp._posicionar(s, hwnd, filas)
+    ULTIMAS_FILAS = filas
     return "ok"
 
 

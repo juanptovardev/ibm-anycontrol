@@ -27,7 +27,6 @@ import asyncio
 import csv
 import json
 import os
-import re
 import sys
 import time
 from pathlib import Path
@@ -48,7 +47,7 @@ import traza
 import vigia
 import ventana
 from _mcp import connect, need_hwnd
-from estado import captura, clasificar, ocr_text
+from estado import captura, clasificar
 from matriz_buscar import (NOMBRE, CALLE, CASA, INK_MIN, VERBOSE, buscar,
                             verifica_texto)
 from matriz_ficha import (escribe_ficha, lee_direcciones,
@@ -158,17 +157,22 @@ def ledger_leido(ruta: Path = LEDGER) -> dict:
 def es_resumable(fila: dict) -> bool:
     """True si la fila dice que esa direccion quedo a medias.
 
-    Resumible = estado 'en_curso' o un error despues de haber pegado alguna
-    pagina (paginas_vistas > 0). 'ok' y 'no_encontrado' no se reanudan.
+    Resumible = 'en_curso', 'pegando' (se estaba pegando una pagina cuando el
+    proceso murio) o un error despues de haber pegado alguna pagina
+    (paginas_vistas > 0). 'ok' y 'no_encontrado' no se reanudan.
+
+    'pegando' cuenta como resumible aunque paginas_vistas sea 0: la pagina en
+    curso pudo quedar pegada a medias, y rehacerla es mejor que darla por
+    buena (un hueco no se ve; un duplicado si).
     """
     estado = (fila.get("estado") or "").strip()
-    if estado == "ok":
+    if estado in ("ok", "no_encontrado"):
         return False
     try:
         paginas = int(fila.get("paginas_vistas") or 0)
     except (TypeError, ValueError):
         paginas = 0
-    return estado == "en_curso" or paginas > 0
+    return estado in ("en_curso", "pegando") or paginas > 0
 
 
 def ledger_en_curso(ruta: Path = LEDGER) -> dict:
@@ -670,6 +674,10 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
             bloques = desde_pagina
             hechos_hoy = 0
             saltadas = 0
+            # Filas REALES pegadas (cp._copiar cuenta las lineas con datos).
+            # Suponer 15 por bloque inflaba el ledger: la ultima pagina de un
+            # edificio casi nunca trae 15 filas.
+            filas_total = 0
             # La captura de la pagina recien paginada se reutiliza: no se paga
             # otra vez el OCR de una pantalla que ya se leyo (pagina.avanza la
             # deja en pagina.ULTIMA). Se limpia al empezar cada direccion.
@@ -686,6 +694,21 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                 # Las 7 bajadas solo en el PRIMER bloque que se extrae: si las
                 # primeras paginas venian sin suscriptores y se saltaron, el
                 # cursor del 5250 sigue sin moverse de su punto.
+                if not dry:
+                    # Antes de tocar la hoja: si el proceso muere entre el
+                    # pegado y su registro (corte de licencia, watchdog, Excel
+                    # cerrnadose), la pagina quedaria sin registrar y la
+                    # reanudacion la reharia sin saberlo. Marcando "pegando"
+                    # con las paginas YA confirmadas, al reanudar se rehace
+                    # ESTA misma pagina: duplicado posible, hueco nunca (un
+                    # hueco es silencioso; un duplicado se ve y se borra).
+                    guarda = {k: res.get(k, "") for k in CAMPOS_LEDGER}
+                    guarda["estado"] = "pegando"
+                    guarda["paginas_vistas"] = bloques + saltadas
+                    guarda["filas_copiadas"] = filas_total
+                    guarda["hora_fin"] = time.strftime("%H:%M:%S")
+                    guarda["notas"] = f"pegando la pagina {bloques + saltadas + 1}"
+                    ledger_escribe(guarda)
                 extra = await matriz_extraer.extrae_bloque(s, hwnd, dry, bajar=(hechos_hoy == 0),
                                            previo=pagina.ULTIMA)
                 if extra == "vacia":
@@ -710,6 +733,9 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                     continue
                 bloques += 1
                 hechos_hoy += 1
+                # Filas reales del bloque (0 = no se pudo leer el portapapeles:
+                # se cae al supuesto historico para no dejar el ledger a cero).
+                filas_total += ciclo.ULTIMAS_FILAS or FILAS_POR_BLOQUE
                 await _pausa(perfil.pausa(inicio, "entre_paginas", objetivo,
                                          paginas=(bloques + saltadas)))
                 # B6 por pagina: lo pegado se registra YA. Si AnyDesk corta la
@@ -724,7 +750,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                     # pegadas, al reanudar se volveria a pegar una pagina ya
                     # pegada. filas_copiadas si cuenta solo las pegadas.
                     parcial["paginas_vistas"] = bloques + saltadas
-                    parcial["filas_copiadas"] = bloques * FILAS_POR_BLOQUE
+                    parcial["filas_copiadas"] = filas_total
                     parcial["hora_fin"] = time.strftime("%H:%M:%S")
                     parcial["notas"] = (f"pagina {bloques + saltadas} pegada; "
                                         f"reanudar en la {bloques + saltadas + 1}")
@@ -749,7 +775,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                 return res
 
             res["paginas_vistas"] = bloques + saltadas
-            res["filas_copiadas"] = bloques * FILAS_POR_BLOQUE
+            res["filas_copiadas"] = filas_total
             res["estado"] = "ok"
             img_fin, _vp_fin = captura(hwnd)
             res["evidencia"] = str(native_shot.save(img_fin, f"{id_}-fin"))
@@ -760,7 +786,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
             # que cubre tambien los caminos de halt y error.
             await _pausa(perfil.pausa(inicio, "cierre", objetivo,
                                      paginas=(bloques + saltadas)))
-            res["notas"] = (f"{bloques} bloques x {FILAS_POR_BLOQUE} filas"
+            res["notas"] = (f"{bloques} bloques, {filas_total} filas"
                             + (f"; {saltadas} paginas vacias saltadas"
                                if saltadas else "")
                             + (f"; {aviso_ficha}" if aviso_ficha else "")
@@ -813,7 +839,12 @@ async def main(hwnd: int, solo_id: str | None, dry: bool = False,
         print("sin filas que procesar")
         return 0
     hechos = ledger_leido()
-    pendientes = [f for f in filas if not (hechos.get(f.get("id"), {}).get("estado") == "ok")]
+    # Mismo criterio que el supervisor: 'no_encontrado' es definitivo (la
+    # direccion no existe en el 5250) y reintentarla en cada pasada solo quema
+    # tiempo. Para rehacerla a proposito: reset_ledger.py --desde=ID.
+    pendientes = [f for f in filas
+                  if (hechos.get(f.get("id"), {}).get("estado")
+                      not in ("ok", "no_encontrado"))]
     if not pendientes:
         print("todo ya procesado (B7)")
         return 0
