@@ -14,6 +14,7 @@ solo entra si el OCR queda dudoso. `F12=Anterior` a secas NO se usa como
 senal: puede estar presente en la barra de teclas de funcion.
 """
 import asyncio
+import re
 import sys
 
 import preflight_auto as pf
@@ -44,6 +45,113 @@ def decide(estado: str | None, no_ibm: bool = False) -> str:
     if estado == "cuenta_matriz":
         return "seguir"
     return "abortar"
+
+
+# El 5250 pinta el contador de pagina abajo a la derecha: "08/031" = pagina 8
+# de 31. Sirve para saber DONDE esta el listado. Sin el, reanudar tras un corte
+# era pulsar AvPag a ciegas: un AvPag perdido dejaba hueco o duplicado, y el
+# ledger no lo podia detectar.
+RE_CONTADOR = re.compile(r"^(\d{1,3})/(\d{1,3})$")
+# Tope de AvPag por reanudacion: una matriz real no pasa de ~40 paginas.
+MAX_SALTOS = 60
+
+
+def _limpia(texto: str) -> str:
+    """Corrige las confusiones tipicas de Tesseract en un contador numerico.
+
+    En un token que solo puede ser digitos y una barra, O->0, I/L->1 y B->8 no
+    tienen ambiguedad: se vieron contadores leidos como "OB/031" o "08/03l".
+    """
+    return (texto or "").strip().upper().replace(" ", "").replace("O", "0") \
+        .replace("I", "1").replace("L", "1").replace("B", "8")
+
+
+def contador(words, ancho: int, alto: int):
+    """(pagina_actual, paginas_totales) del contador NN/NNN, o (None, None).
+
+    Solo se acepta el que cae en la franja inferior derecha: en pantalla hay
+    otros numeros (cuentas, telefonos, contadores de registro) y confundirlos
+    haria saltar a la pagina equivocada.
+    """
+    mejor = None
+    for w in words or []:
+        texto, x, y = w[0], w[1], w[2]
+        m = RE_CONTADOR.match(_limpia(texto))
+        if not m:
+            continue
+        if y < alto * 0.7 or x < ancho * 0.6:
+            continue
+        peso = x + y
+        if mejor is None or peso > mejor[0]:
+            mejor = (peso, int(m.group(1)), int(m.group(2)))
+    if mejor is None:
+        return None, None
+    return mejor[1], mejor[2]
+
+
+def pasos_reanudar(actual, objetivo: int):
+    """AvPag que faltan para llegar a `objetivo` (None si no hay contador).
+
+    Negativo = el listado ya esta MAS adelante de lo que dice el ledger: no se
+    retrocede, porque lo que hay por delante ya se pego en la hoja.
+    """
+    if actual is None:
+        return None
+    return objetivo - actual
+
+
+async def reanudar(s, hwnd: int, objetivo: int, intentos: int = 4,
+                   espera: float = 0.9):
+    """Deja el listado en la pagina `objetivo` mirando el contador NN/NNN.
+
+    Devuelve (pagina_real, nota). Si el contador no se puede leer en ningun
+    intento, se cae al comportamiento historico (AvPag x N a ciegas) y se
+    avisa en la nota: es lo unico que se puede hacer sin saber donde estamos.
+    """
+    actual = total = None
+    for _ in range(intentos):
+        img, _vp = captura(hwnd)
+        _texto, words = ocr_completo(img)
+        actual, total = contador(words, img.width, img.height)
+        if actual is not None:
+            break
+        await asyncio.sleep(espera)
+
+    if actual is None:
+        for k in range(max(0, objetivo - 1)):
+            await pf.step(s, f"resuma_avpag_{k}", "press_keys",
+                          {"keys": ["pagedown"]})
+            await asyncio.sleep(1.1)
+        return objetivo, "sin contador de pagina: se avanzo a ciegas"
+
+    saltos = pasos_reanudar(actual, objetivo)
+    if saltos == 0:
+        return actual, ""
+    if saltos < 0:
+        return actual, (f"el listado ya estaba en la pagina {actual} "
+                        f"(el ledger decia {objetivo}): no se retrocede")
+
+    dados = 0
+    while saltos > 0 and dados < MAX_SALTOS:
+        await pf.step(s, f"resuma_avpag_{dados}", "press_keys",
+                      {"keys": ["pagedown"]})
+        await asyncio.sleep(1.1)
+        dados += 1
+        img, _vp = captura(hwnd)
+        _texto, words = ocr_completo(img)
+        nuevo, _total = contador(words, img.width, img.height)
+        if nuevo is not None:
+            actual = nuevo
+            saltos = pasos_reanudar(actual, objetivo)
+
+    if saltos > 0:
+        nota = (f"no se llego a la pagina {objetivo}: el contador quedo en "
+                f"{actual} (faltan {saltos})")
+    elif saltos < 0:
+        nota = f"se paso de la pagina {objetivo}: el contador quedo en {actual}"
+    else:
+        nota = ""
+    return actual, nota
 
 
 async def volver(s, hwnd: int, intentos: int = 3, sondeos: int = 4) -> dict:

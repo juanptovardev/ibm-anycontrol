@@ -662,13 +662,22 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
             # licencia gratuita de AnyDesk corta la sesion a los pocos minutos
             # y sin esto cada corte obligaria a repetir (y duplicar) lo pegado.
             if desde_pagina > 0:
-                print(f"reanudando en la pagina {desde_pagina + 1} "
+                objetivo_pag = desde_pagina + 1
+                print(f"reanudando en la pagina {objetivo_pag} "
                       f"({desde_pagina} ya pegadas)", flush=True)
-                for k in range(desde_pagina):
-                    await pf.step(s, f"resuma_avpag_{k}", "press_keys",
-                                  {"keys": ["pagedown"]})
-                    await asyncio.sleep(1.1)
-                await asyncio.sleep(0.9)
+                # AvPag a ciegas dejaba hueco o duplicado si uno se perdia: se
+                # mira el contador NN/NNN de abajo a la derecha y se para en la
+                # pagina correcta (medido 03/11 con el auditor).
+                real, nota = await pagina.reanudar(s, hwnd, objetivo_pag)
+                if nota:
+                    print(f"  reanudacion: {nota}", flush=True)
+                # Si el listado ya estaba MAS adelante de lo que dice el
+                # ledger, se sigue desde donde esta: retroceder duplicaria lo
+                # que ya se pego.
+                desde_pagina = max(0, (real or objetivo_pag) - 1)
+                if desde_pagina + 1 != objetivo_pag:
+                    print(f"  reanudacion ajustada: se sigue desde la pagina "
+                          f"{desde_pagina + 1}", flush=True)
 
             # Bloque por bloque hasta el aviso de fin de archivo.
             bloques = desde_pagina
