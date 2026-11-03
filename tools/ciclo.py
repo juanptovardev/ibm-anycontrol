@@ -25,6 +25,7 @@ import asyncio
 import sys
 
 import cp
+import native_shot
 import preflight_auto as pf
 import perfil
 from click_sel import pagina_vacia, target_celda_fallback
@@ -59,11 +60,24 @@ async def extrae(s, hwnd: int, dry: bool = False, bajar: bool = True,
     if previo:
         img, texto, words = previo["img"], previo["texto"], previo["words"]
         print("A0 reutilizo la captura de la pagina (sin OCR nuevo)", flush=True)
+        # La evidencia visual de la pagina se conserva aunque no se vuelva a
+        # capturar: sin esto el primer bloque de cada direccion se quedaria sin
+        # PNG y el operador no podria verificarlo.
+        native_shot.save(img, "ciclo-antes")
     else:
         img = pf.shot(hwnd, "ciclo-antes")
         texto, words = ocr_completo(img)
     ULTIMA_IMG = img
     t = target_celda_fallback(img, words)
+    if not t and previo:
+        # La captura reutilizada pudo atrapar la pantalla a medio pintar: se
+        # recaptura y se reintenta. El previo es una optimisation, no la fuente
+        # de verdad: si no sirve, se vuelve a leer la pantalla.
+        print("A1 la captura reutilizada no sirvio: se recaptura", flush=True)
+        img = pf.shot(hwnd, "ciclo-antes")
+        texto, words = ocr_completo(img)
+        ULTIMA_IMG = img
+        t = target_celda_fallback(img, words)
     if not t:
         raise pf.Halt("A1 no se encontro la cabecera Suscript ni sus codigos")
     print(f"A1 clic en x={t['x']} y={t['y']} (col {t['col_left']}..{t['col_right']}, "

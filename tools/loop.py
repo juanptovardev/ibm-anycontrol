@@ -768,6 +768,14 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                 st = await espera_estado(hwnd, {"cuenta_matriz",
                                                 "sin_coincidencia", "error",
                                                 "fin_libro"})
+            # T4': el OCR con el que se detecto el listado ya esta pagado
+            # (~930 ms). Esa misma lectura la reutiliza el primer bloque
+            # (ciclo.extrae) en vez de volver a leer la MISMA pantalla.
+            previo_inicial = None
+            if st.get("estado") == "cuenta_matriz" and st.get("img") is not None:
+                previo_inicial = {"img": st.get("img"),
+                                   "texto": st.get("texto") or "",
+                                   "words": st.get("words") or []}
             if st["estado"] in ("sin_coincidencia", "formulario") or (
                     vino_mensajes and st["estado"] == "error"):
                 # 'formulario' aqui significa que la busqueda no arranco el
@@ -855,7 +863,10 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
             # La captura de la pagina recien paginada se reutiliza: no se paga
             # otra vez el OCR de una pantalla que ya se leyo (pagina.avanza la
             # deja en pagina.ULTIMA). Se limpia al empezar cada direccion.
-            pagina.ULTIMA = None
+            # T4': el primer bloque de una direccion nueva reutiliza la lectura
+            # del listado que ya hizo espera_estado (sin OCR nuevo). Con
+            # reanudacion no sirve: la pagina actual es otra.
+            pagina.ULTIMA = previo_inicial if desde_pagina == 0 else None
             for n in range(1, MAX_PAGINAS + 1):
                 if obedece() == "detener":
                     res["notas"] = f"detenido por el panel en el bloque {n}"

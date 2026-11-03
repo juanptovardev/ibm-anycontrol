@@ -308,8 +308,21 @@ def reglas(texto: str) -> dict:
 
 
 def clasificar(img: Image.Image, usar_jev: bool = True) -> dict:
-    """Estado final: regla si es clara; si no, Jev sobre el texto del OCR."""
-    return clasificar_texto(ocr_text(img), usar_jev)
+    """Estado final: regla si es clara; si no, Jev sobre el texto del OCR.
+
+    Devuelve ademas la imagen y las palabras con coordenadas: el OCR ya esta
+    pagado y las necesita el detector de la columna Suscript. T4': el primer
+    bloque de cada direccion reutiliza esta lectura en vez de pagar otro OCR
+    de la MISMA pantalla (~930 ms por direccion).
+
+    `ocr_completo` cuesta lo mismo que `ocr_text` (una sola pasada de
+    Tesseract) y da las dos cosas: texto y palabras.
+    """
+    texto, words = ocr_completo(img)
+    resultado = clasificar_texto(texto, usar_jev)
+    resultado["img"] = img
+    resultado["words"] = words
+    return resultado
 
 
 def clasificar_texto(texto: str, usar_jev: bool = True) -> dict:

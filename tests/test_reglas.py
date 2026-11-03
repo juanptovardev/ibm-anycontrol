@@ -82,7 +82,7 @@ class TestReglas(unittest.TestCase):
 
         # Pantalla con marcadores del 5250 (sin cabecera CONSULTA): la regla no
         # decide, Jev si, y el veredicto se acepta porque hay marcador real.
-        with patch.object(estado, "ocr_text", return_value="Cuenta Edificio : 34377 F10=Buscar Direccion"), \
+        with patch.object(estado, "ocr_completo", return_value=("Cuenta Edificio : 34377 F10=Buscar Direccion", [])), \
                 patch.object(estado, "ask", return_value={
                     "ok": True, "choice": "cuenta_matriz", "confidence": 0.9,
                     "confianza": 0.9,
@@ -110,7 +110,7 @@ class TestReglas(unittest.TestCase):
         from unittest.mock import patch
         from PIL import Image
 
-        with patch.object(estado, "ocr_text", return_value="tabla de direcciones y suscriptores"), \
+        with patch.object(estado, "ocr_completo", return_value=("tabla de direcciones y suscriptores", [])), \
                 patch.object(estado, "ask", return_value={
                     "ok": True, "choice": "cuenta_matriz", "confidence": 0.9,
                     "confianza": 0.9,
