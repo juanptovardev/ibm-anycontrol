@@ -20,8 +20,13 @@ import preflight_auto as pf
 from _mcp import connect, need_hwnd
 from estado import captura, clasificar_rapido, clasificar_texto, ocr_completo
 
-ESPERA_TAB = 0.8
-ESPERA_PAGINA = 0.65
+ESPERA_TAB = 0.5
+ESPERA_PAGINA = 0.3
+ESPERA_PAGINA_LENTA = 0.7  # primer AvPag de la direccion: sin referencia previa
+# Minimo de pixeles que deben cambiar entre paginas. Si la pantalla casi no
+# cambia, el AvPag todavia no se ha procesado y NO se debe copiar (si no, se
+# pega la pagina anterior otra vez: duplicado).
+PAGINA_MIN_DIFF = 3000
 # Estados que significan "seguimos dentro del listado del 5250".
 IBM_OK = {"cuenta_matriz", "fin_libro"}
 # Ultima captura de avanza(): el ciclo la reutiliza y no repite el OCR.
@@ -63,12 +68,17 @@ async def volver(s, hwnd: int, intentos: int = 3, sondeos: int = 4) -> dict:
     raise pf.Halt("volver: el remoto sigue en el navegador tras varios Alt+Tab")
 
 
-async def avanza(s, hwnd: int, intentos: int = 3) -> dict:
+async def avanza(s, hwnd: int, intentos: int = 3,
+                 prev=None) -> dict:
     """AvPag + clasificacion. Devuelve el estado con la senal de fin de archivo.
 
     La captura y el OCR quedan en `ULTIMA`: el ciclo los reutiliza para medir
     la columna Suscript sin volver a capturar ni re-ejecutar Tesseract sobre la
     misma pantalla.
+
+    `prev` es la captura de la pagina anterior: si la pantalla casi no cambia
+    tras el AvPag, el remoto todavia no lo ha procesado y se espera (copiar
+    entonces seria pegar la misma pagina dos veces).
 
     Medido el 28/10 (run8, D03): hay frames en los que la pantalla no se puede
     leer ni con las reglas ni con Jev (estado None) y la direccion se perdia.
@@ -77,11 +87,16 @@ async def avanza(s, hwnd: int, intentos: int = 3) -> dict:
     """
     global ULTIMA
     await pf.step(s, "avpag", "press_keys", {"keys": ["pagedown"]})
-    await asyncio.sleep(ESPERA_PAGINA)
+    await asyncio.sleep(ESPERA_PAGINA if prev is not None else ESPERA_PAGINA_LENTA)
     st = None
     img = texto = words = None
     for i in range(intentos):
         img = pf.shot(hwnd, "pagina")
+        if prev is not None and pf.changed_px(prev, img) < PAGINA_MIN_DIFF:
+            print(f"PAGINA la pantalla casi no cambio (intento {i + 1}/{intentos}): "
+                  f"se recaptura", flush=True)
+            await asyncio.sleep(ESPERA_PAGINA)
+            continue
         texto, words = ocr_completo(img)
         st = clasificar_texto(texto, usar_jev=(i == intentos - 1))
         if st.get("estado") is not None:

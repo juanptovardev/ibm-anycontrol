@@ -28,6 +28,7 @@ import sys
 from PIL import Image
 
 import preflight_auto as pf
+import native_shot
 import perfil
 from _mcp import connect, need_hwnd
 from estado import captura, clasificar, clasificar_rapido, ocr_text
@@ -107,7 +108,7 @@ async def _seleccionar(s, hwnd: int, dry: bool) -> tuple:
     teclas = ["shift"] + ["right"] * ANCHO + ["down"] * ALTO
     await pf.step(s, "seleccion", "press_keys",
                   {"keys": teclas, "key_delay_ms": perfil.key_delay_ms()})
-    await asyncio.sleep(0.3)
+    await asyncio.sleep(0.2)
     img = pf.shot(hwnd, "cp-sel" if not dry else "cp-sel-dry")
     caja, alto_sel = sel_box(img)
     ancho = (caja[2] - caja[0]) if caja else 0
@@ -123,8 +124,29 @@ async def _seleccionar(s, hwnd: int, dry: bool) -> tuple:
 
 
 async def _copiar(s) -> None:
+    # El portapapeles local es instantaneo: 0.25 s aqui era espera muerta.
     await pf.step(s, "ctrl_c", "copy_clipboard", {})
-    await asyncio.sleep(0.25)
+    await asyncio.sleep(0.1)
+
+
+async def _espera_pegado(hwnd: int, antes, intentos: int = 6,
+                         espera: float = 0.12) -> tuple:
+    """Espera ACTIVA a que el pegado se vea: captura y compara cada 120 ms.
+
+    Antes se dormia 0,6 s fijos y luego se comparaba; el pegado se ve a los
+    ~150 ms, asi que se perdian ~450 ms por bloque. Se capturan sin guardar
+    (solo la ultima se guarda como evidencia).
+    """
+    mejor = 0
+    img = antes
+    for i in range(intentos):
+        await asyncio.sleep(espera)
+        img, _vp = captura(hwnd)
+        diff = pf.changed_px(antes, img)
+        if diff >= PASTE_MIN_DIFF:
+            return diff, img
+        mejor = max(mejor, diff)
+    return mejor, img
 
 
 async def _pegar(s, hwnd: int) -> None:
@@ -135,40 +157,39 @@ async def _pegar(s, hwnd: int) -> None:
     navegador aparecia un par de segundos despues. Se sondea hasta 3.6s y,
     si el destino sigue sin ser el navegador, se reenvia el Alt+Tab una vez.
     """
-    async def _espera_destino(sondeos: int) -> dict:
+    async def _espera_destino(sondeos: int) -> tuple:
         st: dict = {}
+        img = None
         for _ in range(sondeos):
-            await asyncio.sleep(0.6)
-            st = clasificar_rapido(captura(hwnd)[0])
+            await asyncio.sleep(0.35)
+            img, _vp = captura(hwnd)
+            st = clasificar_rapido(img)
             if (st.get("senales") or {}).get("no_ibm"):
-                return st
-        return st
+                return st, img
+        return st, img
 
     await pf.step(s, "alt_tab", "press_keys", {"keys": ["alt", "tab"]})
-    st = await _espera_destino(6)
+    st, antes = await _espera_destino(6)
     if not (st.get("senales") or {}).get("no_ibm"):
         print("G2 el Alt+Tab no ha llegado al navegador: se reenvia", flush=True)
         await pf.step(s, "alt_tab2", "press_keys", {"keys": ["alt", "tab"]})
-        st = await _espera_destino(5)
+        st, antes = await _espera_destino(5)
     no_ibm = bool((st.get("senales") or {}).get("no_ibm"))
     print(f"G2 pantalla destino: estado={st.get('estado')} no_ibm={no_ibm} "
           f"error={st.get('error')}", flush=True)
     if not no_ibm:
         raise pf.Halt("G2 tras Alt+Tab sigue siendo la pantalla IBM: no se pega")
-    antes = pf.shot(hwnd, "cp-pre-paste")
+    # La captura "antes" es la del sondeo de G2: no hace falta otra.
     await pf.step(s, "ctrl_shift_v", "paste_clipboard", {"shift": True})
-    await asyncio.sleep(0.6)
-    despues = pf.shot(hwnd, "cp-post-paste")
-    diff = pf.changed_px(antes, despues)
+    diff, img_post = await _espera_pegado(hwnd, antes)
     if diff < PASTE_MIN_DIFF:
         print(f"G3 sin cambio visible ({diff}px): un reintento", flush=True)
         await pf.step(s, "ctrl_shift_v_retry", "paste_clipboard", {"shift": True})
-        await asyncio.sleep(0.6)
-        despues = pf.shot(hwnd, "cp-post-paste-retry")
-        diff = pf.changed_px(antes, despues)
+        diff, img_post = await _espera_pegado(hwnd, antes)
     print(f"G3 diff={diff}px", flush=True)
     if diff < PASTE_MIN_DIFF:
         raise pf.Halt("G3 el pegado no se ve: Ctrl+C no llego al portapapeles remoto")
+    native_shot.save(img_post, "cp-post-paste")
 
 
 async def _posicionar(s, hwnd: int) -> None:

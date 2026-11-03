@@ -91,3 +91,8 @@ volver_formulario  ->  Escape + F12 + F12  ->  siguiente direccion
 numérico** (`press_keys ["add"]`) es el avance de campo: el `+` alfanumérico no
 sirve. `delete` no borra y `home` salta al primer campo: para vaciar un campo
 se sobrescribe con espacios desde la posición 0 del campo.
+
+**Perfiles de velocidad**: `tools/perfil.py` (sigiloso / humano / rapido /
+psicopata). El techo se cumple rellenando pausas naturales, nunca acelerando
+por debajo. `--perfil=X` y `--teclas=rapido|humano`. Detalle y medidas en
+`docs/PERFILES_VELOCIDAD.md`.

@@ -30,6 +30,11 @@ import perfil
 from click_sel import pagina_vacia, target_celda_fallback
 from estado import ocr_completo
 
+# Captura limpia de la pagina en la que se esta trabajando. La usa el bucle
+# como referencia para saber si el AvPag ya se proceso (si la pantalla casi no
+# cambia, la pagina anterior se volveria a pegar: duplicado).
+ULTIMA_IMG = None
+
 
 async def extrae(s, hwnd: int, dry: bool = False, bajar: bool = True,
                  previo: dict | None = None) -> str:
@@ -43,6 +48,7 @@ async def extrae(s, hwnd: int, dry: bool = False, bajar: bool = True,
     palabras). Se reutiliza para no pagar otra captura ni otro OCR de la MISMA
     pantalla.
     """
+    global ULTIMA_IMG
     if bajar:
         await pf.step(s, "bajar_inicio", "press_keys",
                       {"keys": ["down"] * cp.BAJAR_INICIO,
@@ -56,6 +62,7 @@ async def extrae(s, hwnd: int, dry: bool = False, bajar: bool = True,
     else:
         img = pf.shot(hwnd, "ciclo-antes")
         texto, words = ocr_completo(img)
+    ULTIMA_IMG = img
     t = target_celda_fallback(img, words)
     if not t:
         raise pf.Halt("A1 no se encontro la cabecera Suscript ni sus codigos")
@@ -68,7 +75,10 @@ async def extrae(s, hwnd: int, dry: bool = False, bajar: bool = True,
         return "vacia"
     await pf.step(s, "shift_click", "click_point",
                   {"x": t["x"], "y": t["y"], "shift": True})
-    await asyncio.sleep(0.5)
+    # El servidor ya deja 150 ms de settle antes del clic (medido: sin eso el
+    # remoto recibia el clic SIN shift). 0.25 s basta para que el 5250 aplique
+    # la seleccion; antes se dormia 0.5 s.
+    await asyncio.sleep(0.25)
     img = pf.shot(hwnd, "ciclo-sel")
     caja, alto = cp.sel_box(img)
     print(f"A2 seleccion caja={caja} alto={alto} (informativo)", flush=True)

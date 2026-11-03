@@ -311,7 +311,7 @@ class TestPaginasVistas(unittest.IsolatedAsyncioTestCase):
         async def fake_volver(s, hwnd, intentos=3, sondeos=4):
             return True
 
-        async def fake_avanza(s, hwnd):
+        async def fake_avanza(s, hwnd, intentos=3, prev=None):
             return {"estado": "cuenta_matriz", "senales": {}}
 
         async def fake_sleep(*_a, **_k):

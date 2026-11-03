@@ -200,7 +200,7 @@ def _mata(proc: subprocess.Popen) -> None:
 
 
 def lanza(vuelta: int, dry: bool = False, ids: str | None = None,
-          perf: str | None = None) -> tuple:
+          perf: str | None = None, teclas: str | None = None) -> tuple:
     """Arranca tools/autonomo.py y devuelve (proceso, ruta del log)."""
     log = DATOS / f"supervisor-vuelta-{vuelta}.log"
     cmd = [sys.executable, "-u", str(RAIZ / "tools" / "autonomo.py")]
@@ -213,6 +213,9 @@ def lanza(vuelta: int, dry: bool = False, ids: str | None = None,
         # El perfil de velocidad lo elige el operador; viaja por el entorno
         # para que el agente hijo lo herede.
         env["MATRIZ_PERFIL"] = perf
+    if teclas:
+        # La cadencia de teclas es un knob aparte del perfil (ver perfil.TECLAS).
+        env["MATRIZ_TECLAS"] = teclas
     fh = open(log, "w", encoding="utf-8", errors="replace")
     proc = subprocess.Popen(cmd, cwd=str(RAIZ), stdout=fh, stderr=subprocess.STDOUT,
                             stdin=subprocess.DEVNULL, env=env)
@@ -268,7 +271,7 @@ def escribe_estado(**datos) -> None:
 def corre(dry: bool = False, ids: str | None = None, max_vueltas: int = 8,
           max_sin_avance: int = 2, horas: float = 8.0,
           sin_progreso: int = 240, tope_vuelta: int = 5400,
-          perf: str | None = None) -> int:
+          perf: str | None = None, teclas: str | None = None) -> int:
     DATOS.mkdir(parents=True, exist_ok=True)
     if LOCK.exists():
         print(f"ya hay un supervisor corriendo (si no es asi, borra {LOCK})",
@@ -314,7 +317,7 @@ def corre(dry: bool = False, ids: str | None = None, max_vueltas: int = 8,
                 break
             escribe_estado(vuelta=vuelta, pendientes=len(faltan), total=cuantas,
                            estado="corriendo", hora=time.strftime("%H:%M:%S"))
-            proc, log = lanza(vuelta, dry, ids, perf)
+            proc, log = lanza(vuelta, dry, ids, perf, teclas)
             print(f"  log: {log.name}", flush=True)
             codigo, motivo = vigila(proc, log, sin_progreso, tope_vuelta)
             est = estados()
@@ -361,6 +364,7 @@ def main(argv: list) -> int:
     horas, tope = 8.0, 5400
     dry = False
     perf = None
+    teclas = None
     for a in argv[1:]:
         if a == "--dry":
             dry = True
@@ -378,13 +382,20 @@ def main(argv: list) -> int:
             tope = int(a.split("=", 1)[1])
         elif a.startswith("--perfil="):
             perf = a.split("=", 1)[1]
+        elif a.startswith("--teclas="):
+            teclas = a.split("=", 1)[1].strip().lower()
+            if teclas not in ("rapido", "humano"):
+                print(f"modo de teclas desconocido: {a} (usa rapido/humano)",
+                      file=sys.stderr)
+                return 2
         elif a in ("-h", "--help"):
             print(__doc__)
             return 0
         else:
             print(f"opcion desconocida: {a}", file=sys.stderr)
             return 2
-    return corre(dry, ids, max_vueltas, max_sin, horas, sin_prog, tope, perf)
+    return corre(dry, ids, max_vueltas, max_sin, horas, sin_prog, tope, perf,
+                 teclas)
 
 
 if __name__ == "__main__":

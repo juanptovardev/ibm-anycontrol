@@ -43,15 +43,17 @@ class TestSecuenciaDeBusqueda(unittest.TestCase):
     def test_secuencia_de_limpieza_del_nombre(self):
         llamadas = self._correr()
         etiquetas = [c[0] for c in llamadas]
-        self.assertEqual(etiquetas[:9], [
-            "nombre_clic", "nombre_derecha", "nombre_izquierda",
-            "nombre_suprimir", "nombre_mas", "calle_clic", "calle_derecha",
-            "calle_izquierda", "calle_suprimir",
+        # derecha + izquierda + Suprimir van en UNA llamada (el MCP cobra por
+        # llamada); el '+' del bloque numerico va aparte porque es Field Exit.
+        self.assertEqual(etiquetas[:7], [
+            "nombre_clic", "nombre_sentar", "nombre_mas", "calle_clic",
+            "calle_sentar", "step1", "plus1",
         ])
         por_etiqueta = {c[0]: c for c in llamadas}
-        self.assertEqual(por_etiqueta["nombre_derecha"][2]["keys"], ["right"])
-        self.assertEqual(por_etiqueta["nombre_izquierda"][2]["keys"], ["left"])
-        self.assertEqual(por_etiqueta["nombre_suprimir"][2]["keys"], ["delete"])
+        self.assertEqual(por_etiqueta["nombre_sentar"][2]["keys"],
+                         ["right", "left", "delete"])
+        self.assertEqual(por_etiqueta["calle_sentar"][2]["keys"],
+                         ["right", "left", "delete"])
         self.assertEqual(por_etiqueta["nombre_mas"][2]["keys"], ["add"])
 
     def test_el_clic_va_en_la_celda_1_del_campo(self):
@@ -80,8 +82,8 @@ class TestSecuenciaDeBusqueda(unittest.TestCase):
 
     def test_el_mas_del_bloque_numerico_entre_partes(self):
         etiquetas = [c[0] for c in self._correr()]
-        self.assertEqual(etiquetas[9:], [
-            "step1", "plus1", "step2", "plus2", "bog", "plus3", "tvc",
+        self.assertEqual(etiquetas[7:], [
+            "step2", "plus2", "bog", "plus3", "tvc",
         ])
 
 

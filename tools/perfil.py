@@ -18,6 +18,11 @@ Perfiles (definidos por el operador el 03/11/2026):
 Nota honesta: el perfil psicopata es el techo teorico del operador, no un
 objetivo alcanzable con AnyDesk (medido: el suelo real esta en ~12,6 s por
 direccion). Con ese perfil el motor informara del desfase.
+
+La cadencia de teclas va aparte (TECLAS): 'rapido' 35 ms (el motor actual) o
+'humano' 110 ms. No se ata al perfil porque el perfil sigiloso no podria
+cumplir su techo con teclas de 120 ms. Con 'humano' el motor se pasa de todos
+los techos y el informe lo dice.
 """
 from __future__ import annotations
 
@@ -27,19 +32,19 @@ import time
 
 PERFILES = {
     "sigiloso": {
-        "s_dir": 27.5, "key_delay_ms": 120, "jitter": 0.30,
+        "s_dir": 27.5, "jitter": 0.30,
         "desc": "1,5x mas lento que el operador",
     },
     "humano": {
-        "s_dir": 18.3, "key_delay_ms": 75, "jitter": 0.25,
+        "s_dir": 18.3, "jitter": 0.25,
         "desc": "el ritmo del operador",
     },
     "rapido": {
-        "s_dir": 12.2, "key_delay_ms": 40, "jitter": 0.15,
+        "s_dir": 12.2, "jitter": 0.15,
         "desc": "1,5x mas rapido que el operador",
     },
     "psicopata": {
-        "s_dir": 9.15, "key_delay_ms": 28, "jitter": 0.10,
+        "s_dir": 9.15, "jitter": 0.10,
         "desc": "2x mas rapido que el operador (techo real ~12,6 s)",
     },
 }
@@ -50,6 +55,21 @@ ENV = "MATRIZ_PERFIL"
 # Override en memoria (lo usa el CLI del proceso actual). El entorno sigue
 # siendo la via normal: el supervisor lo pasa a los subprocesos.
 ACTIVO = None
+
+# ---------------------------------------------------------------- teclas ----
+# La cadencia de teclas NO va atada al perfil: si lo estuviera, el perfil
+# sigiloso (120 ms x ~105 teclas = 11,5 s) no podria cumplir su propio techo
+# de 27,5 s por direccion. El perfil manda sobre el RITMO TOTAL (techo +
+# pausas + jitter); la cadencia de tecleo es un knob tecnico aparte.
+#
+#   rapido  35 ms -> el motor actual (lo que aguanta el AnyDesk)
+#   humano 110 ms -> cadencia de una persona; cuesta ~7,5 s mas por direccion
+#
+# Con "humano" el motor se va por encima de cualquier techo: el informe lo
+# dice, no se disimula.
+TECLAS = {"rapido": 35, "humano": 110}
+ENV_TECLAS = "MATRIZ_TECLAS"
+ACTIVO_TECLAS = None
 
 # Reparto del deficit de tiempo en pausas naturales. Suman 1,0.
 PUNTOS = {
@@ -83,9 +103,20 @@ def objetivo_s(valor=None):
     return float(actual(valor)["s_dir"])
 
 
+def teclas_nombre(valor=None):
+    """Modo de cadencia de teclas activo ('rapido' o 'humano')."""
+    bruto = str(valor or ACTIVO_TECLAS or os.environ.get(ENV_TECLAS)
+                or "rapido").strip().lower()
+    return bruto if bruto in TECLAS else "rapido"
+
+
 def key_delay_ms(valor=None):
-    """Retardo entre teclas, en milisegundos."""
-    return int(actual(valor)["key_delay_ms"])
+    """Retardo entre teclas, en milisegundos.
+
+    No depende del perfil: es un knob global (ver TECLAS). El argumento se
+    acepta y se ignora para no romper a quien lo llame con un perfil.
+    """
+    return int(TECLAS[teclas_nombre()])
 
 
 def jitter(valor=None):
@@ -117,4 +148,5 @@ def resumen(valor=None):
     """Linea de texto con los perfiles (para el informe)."""
     p = actual(valor)
     return (f"perfil={p['nombre']} techo={p['s_dir']} s/dir "
-            f"tecla={p['key_delay_ms']} ms jitter={p['jitter']}")
+            f"tecla={key_delay_ms()} ms ({teclas_nombre()}) "
+            f"jitter={p['jitter']}")

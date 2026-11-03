@@ -50,17 +50,15 @@ class TestNombres(unittest.TestCase):
         p = perfil.actual("humano")
         self.assertEqual(p["nombre"], "humano")
         self.assertEqual(p["s_dir"], 18.3)
-        self.assertIn("key_delay_ms", p)
         self.assertIn("jitter", p)
 
 
 class TestValores(unittest.TestCase):
     def test_objetivo_y_delay(self):
         self.assertEqual(perfil.objetivo_s("sigiloso"), 27.5)
-        self.assertEqual(perfil.key_delay_ms("sigiloso"), 120)
-        self.assertEqual(perfil.key_delay_ms("humano"), 75)
-        self.assertEqual(perfil.key_delay_ms("rapido"), 40)
-        self.assertEqual(perfil.key_delay_ms("psicopata"), 28)
+        # El retardo de tecla NO va atado al perfil (ver perfil.TECLAS): si
+        # lo estuviera, el perfil sigiloso no podria cumplir su techo.
+        self.assertEqual(perfil.key_delay_ms(), 35)
 
     def test_mas_lento_mas_jitter(self):
         # El perfil sigiloso es el que mas variacion lleva (ritmo humano).
@@ -72,6 +70,42 @@ class TestValores(unittest.TestCase):
 
     def test_resumen_nombra_el_perfil(self):
         self.assertIn("perfil=humano", perfil.resumen("humano"))
+
+
+class TestTeclas(unittest.TestCase):
+    """La cadencia de teclas es un knob global, no parte del perfil."""
+
+    def test_el_delay_no_depende_del_perfil(self):
+        self.assertEqual(perfil.key_delay_ms("sigiloso"),
+                         perfil.key_delay_ms("psicopata"))
+
+    def test_el_modo_humano_sube_el_delay(self):
+        perfil.ACTIVO_TECLAS = "humano"
+        try:
+            self.assertEqual(perfil.key_delay_ms(), 110)
+        finally:
+            perfil.ACTIVO_TECLAS = None
+
+    def test_un_modo_desconocido_cae_en_rapido(self):
+        perfil.ACTIVO_TECLAS = "turbo"
+        try:
+            self.assertEqual(perfil.teclas_nombre(), "rapido")
+        finally:
+            perfil.ACTIVO_TECLAS = None
+
+    def test_el_entorno_elige_el_modo_de_teclas(self):
+        os.environ[perfil.ENV_TECLAS] = "humano"
+        try:
+            self.assertEqual(perfil.teclas_nombre(), "humano")
+        finally:
+            os.environ.pop(perfil.ENV_TECLAS, None)
+
+    def test_el_argumento_manda_sobre_el_entorno_en_las_teclas(self):
+        os.environ[perfil.ENV_TECLAS] = "humano"
+        try:
+            self.assertEqual(perfil.teclas_nombre("rapido"), "rapido")
+        finally:
+            os.environ.pop(perfil.ENV_TECLAS, None)
 
 
 class TestDeficit(unittest.TestCase):
@@ -127,13 +161,13 @@ class TestIntegracionConElMotor(unittest.TestCase):
             asyncio.run(pf.step(None, "x", name, args))
         return enviados["args"]
 
-    def test_press_keys_recibe_el_delay_del_perfil(self):
-        perfil.ACTIVO = "sigiloso"
+    def test_press_keys_recibe_el_delay_global(self):
+        perfil.ACTIVO_TECLAS = "humano"
         try:
             args = self._step("press_keys", {"keys": ["down"]})
         finally:
-            perfil.ACTIVO = None
-        self.assertEqual(args["key_delay_ms"], 120)
+            perfil.ACTIVO_TECLAS = None
+        self.assertEqual(args["key_delay_ms"], 110)
 
     def test_un_delay_propio_no_se_pisa(self):
         perfil.ACTIVO = "rapido"

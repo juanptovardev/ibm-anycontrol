@@ -497,6 +497,13 @@ def main(argv: list) -> int:
             solo_ficha = True
         elif a.startswith("--perfil="):
             perfil.ACTIVO = a.split("=", 1)[1]
+        elif a.startswith("--teclas="):
+            modo = a.split("=", 1)[1].strip().lower()
+            if modo not in perfil.TECLAS:
+                print(f"modo de teclas desconocido: {a} "
+                      f"(usa {'/'.join(perfil.TECLAS)})", file=sys.stderr)
+                return 2
+            perfil.ACTIVO_TECLAS = modo
         elif a in ("-h", "--help"):
             print(__doc__)
             return 0

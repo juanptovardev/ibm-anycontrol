@@ -65,6 +65,9 @@ CASA = 2
 # El bloque del operador son 15 filas (7 abajo + 14 de alto).
 FILAS_POR_BLOQUE = 15
 MAX_PAGINAS = 40
+# Verbosidad: con MATRIZ_VERBOSE=1 se lee el formulario entero antes del F10
+# (cuesta ~1 s de OCR por direccion).
+VERBOSE = os.environ.get("MATRIZ_VERBOSE") == "1"
 CTRL = Path(__file__).resolve().parent.parent / "datos" / "control.json"
 
 
@@ -409,18 +412,18 @@ async def buscar(s, hwnd: int, det: list, parte1: str, parte2: str) -> None:
     await pf.step(s, "nombre_clic", "click_point",
                   {"x": nombre["field_x"] + 2, "y": nombre["cy"]})
     await asyncio.sleep(0.2)
-    await pf.step(s, "nombre_derecha", "press_keys", {"keys": ["right"]})
-    await pf.step(s, "nombre_izquierda", "press_keys", {"keys": ["left"]})
-    await pf.step(s, "nombre_suprimir", "press_keys", {"keys": ["delete"]})
+    # derecha + izquierda + Suprimir en UNA sola llamada: el MCP cobra por
+    # llamada (foco + latencia ~150 ms) y la secuencia es la misma.
+    await pf.step(s, "nombre_sentar", "press_keys",
+                  {"keys": ["right", "left", "delete"]})
     # El '+' del bloque numerico (Field Exit) deja el cursor en Calle.
     await pf.step(s, "nombre_mas", "press_keys", {"keys": ["add"]})
     await asyncio.sleep(0.2)
     await pf.step(s, "calle_clic", "click_point",
                   {"x": calle["field_x"] + 2, "y": calle["cy"]})
     await asyncio.sleep(0.2)
-    await pf.step(s, "calle_derecha", "press_keys", {"keys": ["right"]})
-    await pf.step(s, "calle_izquierda", "press_keys", {"keys": ["left"]})
-    await pf.step(s, "calle_suprimir", "press_keys", {"keys": ["delete"]})
+    await pf.step(s, "calle_sentar", "press_keys",
+                  {"keys": ["right", "left", "delete"]})
     await pf.step(s, "step1", "write_to_anydesk", {"command": parte1})
     await pf.step(s, "plus1", "press_keys", {"keys": ["add"]})
     await pf.step(s, "step2", "write_to_anydesk", {"command": parte2})
@@ -439,15 +442,17 @@ async def verifica_texto(hwnd: int) -> tuple[bool, str]:
     No se exige Nombre vacio: el formulario conserva texto de busquedas
     anteriores y este emulador no borra (delete no borra, home salta al primer
     campo). Si Calle tiene tinta, la escritura llego donde tenia que llegar.
+
+    El OCR del formulario entero se paga SOLO cuando algo va mal (o con
+    MATRIZ_VERBOSE=1): leerlo costaba ~1 s por direccion y era un print.
     """
     img, _vp, det = rowdet.detect(hwnd)
-    # Observabilidad: se lee el formulario ANTES de F10 (un residuo en No.Casa
-    # o Comunidad solo se descubriria por el error del programa). Se reutiliza
-    # la captura de la verificacion, sin pagar un detect extra.
-    print(f"FORMULARIO antes de F10: {ocr_text(img)[:400]}", flush=True)
     if len(det) < 3:
         return False, "no se detectaron filas del formulario"
     tinta_calle = pf.ink(img, det[CALLE])
+    if tinta_calle < INK_MIN or VERBOSE:
+        # Un residuo en No.Casa o Comunidad solo se descubre asi.
+        print(f"FORMULARIO antes de F10: {ocr_text(img)[:400]}", flush=True)
     if tinta_calle < INK_MIN:
         return False, f"Calle vacio (tinta {tinta_calle})"
     return True, f"Calle ok (tinta {tinta_calle})"
@@ -865,7 +870,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                                  detalle=f"{id_} bloque {n} sin suscriptores")
                     if dry:
                         break
-                    stp = await pagina.avanza(s, hwnd)
+                    stp = await pagina.avanza(s, hwnd, prev=ciclo.ULTIMA_IMG)
                     decision = pagina.decide(
                         stp["estado"], bool((stp.get("senales") or {}).get("no_ibm")))
                     traza.evento("pagina", stp["estado"] or "desconocido",
@@ -901,7 +906,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                     break
                 await pagina.volver(s, hwnd)
                 traza.evento("volver", "ok", detalle=f"{id_} bloque {n}")
-                stp = await pagina.avanza(s, hwnd)
+                stp = await pagina.avanza(s, hwnd, prev=ciclo.ULTIMA_IMG)
                 decision = pagina.decide(
                     stp["estado"], bool((stp.get("senales") or {}).get("no_ibm")))
                 traza.evento("pagina", stp["estado"] or "desconocido",
