@@ -17,7 +17,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+import enfocar
 import preflight_auto as pf
+from _mcp import connect
 from estado import captura, tipo_pixeles
 
 ICONOS = Path(__file__).resolve().parent / "iconos"
@@ -64,12 +66,17 @@ def buscar_icono(img, nombre: str, banda: int = BANDA):
 
 
 async def ir_a(s, hwnd: int, destino: str, intentos: int = 3,
-              espera: float = 1.2) -> bool:
+              espera: float = 0.4) -> bool:
     """Lleva el escritorio remoto a la ventana destino. True si lo logro.
 
     Antes de actuar comprueba que ya no esta ahi (clic en un icono de
     ventana Maximizada la MINIMIZARIA). Si no encuentra el icono por
     imagen, prueba el Alt+Tab como ultimo recurso.
+
+    La espera es corta (0,4 s) porque el cambio por taskbar es inmediato:
+    medido el 03/11, el navegador estaba delante a los 0,3 s del clic. Un
+    clic extra en el icono de una ventana ya levantada solo la minimiza, y
+    el siguiente la restaura, asi que los reintentos son seguros.
     """
     nombre = PLANTILLAS.get(destino)
     if nombre is None:
@@ -91,7 +98,11 @@ async def ir_a(s, hwnd: int, destino: str, intentos: int = 3,
 
 
 async def main(hwnd: int, destino: str) -> int:
-    from _mcp import connect
+    # El objetivo de foco es imprescindible: sin el, el clic se va a la
+    # ventana que este delante en la sesion LOCAL y no llega al escritorio
+    # remoto (medido el 03/11: el clic no cambio nada y AnyDesk no estaba
+    # delante).
+    enfocar.set_objetivo(hwnd)
     async with connect() as s:
         await pf.step(s, "focus_click_off", "set_focus_click_mode", {"enabled": False})
         await pf.step(s, "pin", "select_anydesk_window", {"hwnd": hwnd})

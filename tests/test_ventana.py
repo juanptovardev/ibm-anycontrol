@@ -107,5 +107,27 @@ class TestIrA(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(ok)
 
 
+class _CM:
+    async def __aenter__(self):
+        return object()
+
+    async def __aexit__(self, *a):
+        return False
+
+
+class TestMain(unittest.IsolatedAsyncioTestCase):
+    async def test_main_fija_el_objetivo_de_foco(self):
+        """Sin objetivo fijado el clic se va a la ventana local y no llega."""
+        with patch.object(ventana, "captura",
+                          return_value=(Image.new("RGB", (10, 10)), {})), \
+             patch.object(ventana, "tipo_pixeles", return_value="ibm"), \
+             patch.object(ventana.enfocar, "set_objetivo") as obj, \
+             patch.object(ventana, "connect", return_value=_CM()), \
+             patch.object(ventana.pf, "step", new=AsyncMock()), \
+             patch.object(ventana, "ir_a", new=AsyncMock(return_value=True)):
+            await ventana.main(123, ventana.DESTINO_IBM)
+        obj.assert_called_once_with(123)
+
+
 if __name__ == "__main__":
     unittest.main()
