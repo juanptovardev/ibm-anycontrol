@@ -334,7 +334,11 @@ def corre(dry: bool = False, ids: str | None = None, max_vueltas: int = 8,
                     break
             vuelta += 1
             est = estados()
-            faltan = [i for i in pendientes(est) if i not in congelados]
+            # pendientes() devuelve FILAS (con id), no ids: comparar la fila
+            # entera contra un set de ids revienta con "unhashable type".
+            # Una fila sin id se ignora (no se puede pasar al subproceso).
+            faltan = [f.get("id") for f in pendientes(est)
+                      if f.get("id") and f.get("id") not in congelados]
             if pedido is not None:
                 faltan = [i for i in faltan if i in pedido]
             print(f"\n=== VUELTA {vuelta} | pendientes: {len(faltan)}/{cuantas} ===",
@@ -357,7 +361,8 @@ def corre(dry: bool = False, ids: str | None = None, max_vueltas: int = 8,
                     congelados.add(id_)
                     print(f"  DIRECCION CONGELADA {id_}: {fallos[id_]} fallos "
                           f"consecutivos, no se reintenta mas", flush=True)
-            despues = len([i for i in pendientes(est) if i not in congelados])
+            despues = len([f.get("id") for f in pendientes(est)
+                           if f.get("id") not in congelados])
             print(f"  vuelta {vuelta}: {motivo} (codigo={codigo}) | "
                   f"pendientes: {despues}/{cuantas}", flush=True)
             if anterior is not None and despues >= anterior:
