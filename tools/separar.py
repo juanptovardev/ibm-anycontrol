@@ -43,13 +43,16 @@ RAIZ = Path(__file__).resolve().parent.parent
 SALIDA = RAIZ / "datos" / "direcciones.csv"
 CABECERA = ["parte1", "parte2", "ficha"]
 
-PREFIJOS = ("CL", "CR", "TR")
+PREFIJOS = ("CL", "CR", "TR", "DG", "TV")
+# DG (diagonal) y TV (transversal) salieron en la lista real de 121 del
+# operador (DG 82C 75A-21, TV 2 114A-25). El resto de vias (KR, AK, AV, AUT)
+# se anaden cuando aparezcan en una lista de verdad, no por si acaso.
 COMPLEMENTOS = tuple(sorted(
     ("BIS", "ESTE", "SUR", "NORTE", "OESTE", "ESTESUR", "SURESTE",
      "SURORIENTE", "NOROCCIDENTE"),
     key=len, reverse=True))          # por longitud: SURESTE antes que SUR+ESTE
 
-RE_PREFIJO = re.compile(r"^(CL|CR|TR)\s+(.+)$")
+RE_PREFIJO = re.compile(r"^(%s)\s+(.+)$" % "|".join(PREFIJOS))
 RE_INICIO = re.compile(r"^(\d+)(.*)$")
 
 
@@ -84,7 +87,8 @@ def parse(texto) -> dict:
     m = RE_PREFIJO.match(original)
     if not m:
         return {"estado": "unparsed", "parte1": None, "parte2": None,
-                "motivo": "prefijo_no_soportado (se espera CL, CR o TR)"}
+                "motivo": "prefijo_no_soportado (se espera %s)"
+                          % "/".join(PREFIJOS)}
     prefijo, resto = m.group(1), m.group(2)
     tokens = resto.split(" ")
 
@@ -170,16 +174,20 @@ def lee_archivo(ruta: Path, columna: int = 0) -> list:
             filas = list(csv.reader(fh, delimiter=sep))
         if not filas:
             return []
-        # Si la cabecera ya trae parte1/parte2 el archivo YA esta separado.
-        cab = [c.strip().lower() for c in filas[0]]
-        if "parte1" in cab and "parte2" in cab:
-            raise ValueError("el archivo ya tiene columnas parte1/parte2: "
-                             "no hace falta separarlo")
         filas = [f for f in filas if len(f) > columna]
-        # Cabecera ("Direccion", "direccion", "DIRECCION"...): no tiene numeros.
-        if filas and not any(ch.isdigit() for ch in filas[0][columna]):
-            filas = filas[1:]
-        return [f[columna] for f in filas]
+        # La cabecera se reconoce porque NO empieza por un prefijo de via.
+        # No vale mirar si tiene digitos: "parte1" lleva el 1 y se colaba como
+        # dato, y entonces su "parte2" hacia saltar el guard de abajo.
+        primera = normaliza(filas[0][columna]) if filas else ""
+        con_cabecera = bool(primera) and primera.split(" ")[0] not in PREFIJOS
+        cuerpo = filas[1:] if con_cabecera else filas
+        # "Ya separado" se decide por los DATOS, no por la cabecera: el CSV del
+        # agente se llama siempre parte1;parte2;ficha aunque la columna 1 traiga
+        # la direccion entera, que es justo lo que pega el operador desde Excel.
+        if any(len(f) > 1 and f[1].strip() for f in cuerpo):
+            raise ValueError("el archivo ya tiene la columna 2 con datos: "
+                             "no hace falta separarlo")
+        return [f[columna] for f in cuerpo]
     return ruta.read_text(encoding="utf-8-sig").splitlines()
 
 

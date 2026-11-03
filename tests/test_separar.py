@@ -43,9 +43,18 @@ class TestParse(unittest.TestCase):
         self.assertEqual(separar.parse("CL 81BISSUR")["estado"], "unparsed")
 
     def test_prefijos_no_soportados(self):
-        # KR, DG, AK, AV, TV quedan fuera a proposito (documentado como pendiente)
-        for malo in ("KR 8 CL 22-10", "DG 45 12-3", "AV 68 20-11", "TV 3 4-5"):
+        # KR, AK, AV siguen fuera a proposito (documentado como pendiente).
+        # DG y TV ya entraron: salieron en la lista real de 121 del operador.
+        for malo in ("KR 8 CL 22-10", "AK 45 12-3", "AV 68 20-11"):
             self.assertEqual(separar.parse(malo)["estado"], "unparsed", malo)
+
+    def test_dg_y_tv_separan(self):
+        for buena, p1, p2 in (("DG 82C 75A-21", "DG 82C", "75A-21"),
+                              ("TV 2 114A-25", "TV 2", "114A-25")):
+            r = separar.parse(buena)
+            self.assertEqual(r["estado"], "parsed", buena)
+            self.assertEqual(r["parte1"], p1)
+            self.assertEqual(r["parte2"], p2)
 
     def test_vacia(self):
         for malo in ("", "   ", None):
