@@ -15,3 +15,6 @@ datos/direcciones.csv
 datos/ledger.csv
 datos/*backup*.csv
 datos/prueba_*.csv
+datos/supervisor.json
+datos/supervisor*.log
+datos/supervisor.lock

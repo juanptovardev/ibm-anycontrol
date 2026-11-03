@@ -24,6 +24,7 @@ import sys
 
 import enfocar
 import native_shot
+import perfil
 import rows as rowdet
 from _mcp import call, connect, need_hwnd
 
@@ -82,6 +83,11 @@ async def step(s, label, name, args=None):
     # CADA llamada porque el foco oscila solo entre bloques.
     if not enfocar.asegura():
         raise Halt(f"{label}: AnyDesk no esta en primer plano y no se pudo enfocar")
+    if name == "press_keys":
+        # El perfil de velocidad manda en el ritmo de las teclas. Quien pase
+        # su propio key_delay_ms lo respeta (no se pisa).
+        args = dict(args or {})
+        args.setdefault("key_delay_ms", perfil.key_delay_ms())
     res = await call(s, name, args or {})
     if res["isError"]:
         raise Halt(f"{label}: {res['text']}")

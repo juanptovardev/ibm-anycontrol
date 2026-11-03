@@ -52,8 +52,13 @@ class TestEscribeFichaBloqueado(unittest.TestCase):
             self.assertTrue(respaldo.exists())
             with open(respaldo, encoding="utf-8", newline="") as fh:
                 filas = list(csv.reader(fh, delimiter=";"))
+            # El respaldo guarda id + direccion + ficha: el id es posicional y
+            # sin la direccion no se puede saber a que edificio pertenece.
+            self.assertEqual(len(filas[0]), 4)
             self.assertEqual(filas[0][0], "D01")
-            self.assertIn("34377", filas[0][1])
+            self.assertEqual(filas[0][1], "CR 17B")
+            self.assertEqual(filas[0][2], "175-77")
+            self.assertIn("34377", filas[0][3])
 
     def test_id_fuera_de_rango_no_escribe(self):
         with tempfile.TemporaryDirectory() as d:

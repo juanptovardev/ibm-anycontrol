@@ -41,6 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _jev
 import enfocar
 import loop as L
+import perfil
 import preflight_auto as pf
 import traza
 import vigia
@@ -249,7 +250,9 @@ async def _pre_vuelo_intento(s, hwnd: int, intento: int) -> bool:
     print(f"  [pre] estado={est} conf={st.get('confianza')} "
           f"err={st.get('error')} texto={len(texto.strip())}c")
 
-    if est == "formulario":
+    # 'sin_coincidencia' = el formulario con el aviso de "no encontrada": se
+    # puede escribir la direccion siguiente encima sin limpiar (03/11).
+    if est in ("formulario", "sin_coincidencia"):
         return True
     if est == "desconectado":
         await asyncio.sleep(1.5)
@@ -439,8 +442,12 @@ async def corre(hwnd: int | None, ids: str | None, dry: bool,
         return 2
 
     hechos = L.ledger_leido()
+    # 'no_encontrado' es definitivo: la direccion no existe en el 5250 (el
+    # programa contesta 'La direccion no esta en el archivo'). Se salta en las
+    # vueltas siguientes para no re-buscar lo mismo, igual que las 'ok'.
     pendientes = [f for f in filas
-                  if hechos.get(f.get("id"), {}).get("estado") != "ok"]
+                  if hechos.get(f.get("id"), {}).get("estado")
+                  not in ("ok", "no_encontrado")]
     print(f"direcciones: {len(filas)} | pendientes: {len(pendientes)} | "
           f"ya ok: {len(filas) - len(pendientes)}")
     if not pendientes:
@@ -488,6 +495,8 @@ def main(argv: list) -> int:
             dry = True
         elif a == "--solo-ficha":
             solo_ficha = True
+        elif a.startswith("--perfil="):
+            perfil.ACTIVO = a.split("=", 1)[1]
         elif a in ("-h", "--help"):
             print(__doc__)
             return 0

@@ -26,6 +26,7 @@ import sys
 
 import cp
 import preflight_auto as pf
+import perfil
 from click_sel import pagina_vacia, target_celda_fallback
 from estado import ocr_completo
 
@@ -45,7 +46,7 @@ async def extrae(s, hwnd: int, dry: bool = False, bajar: bool = True,
     if bajar:
         await pf.step(s, "bajar_inicio", "press_keys",
                       {"keys": ["down"] * cp.BAJAR_INICIO,
-                       "key_delay_ms": cp.KEY_DELAY_MS})
+                       "key_delay_ms": perfil.key_delay_ms()})
     else:
         print("A0 pagina siguiente: sin 7 bajadas (el cursor ya esta en su punto)",
               flush=True)

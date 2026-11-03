@@ -37,6 +37,7 @@ import credenciales
 import enfocar
 import login
 import pagina
+import perfil
 import preflight_auto as pf
 import nav_prefill
 import native_shot
@@ -147,12 +148,18 @@ def escribe_ficha(id_, ficha: str, ruta: Path = None) -> str:
             return ""
         except PermissionError:
             time.sleep(0.4)
-    # Sigue bloqueado: la ficha no se pierde.
+    # Sigue bloqueado: la ficha no se pierde. Se guarda CON la direccion a la
+    # que pertenece: el id es posicional (D01..D0n) y si el operador cambia una
+    # fila del CSV entre corridas, volcar por id pondria la ficha de un edificio
+    # en la fila de otro.
     respaldo = ruta.parent / "fichas_pendientes.csv"
     try:
         with open(respaldo, "a", encoding="utf-8", newline="") as fh:
             csv.writer(fh, delimiter=";").writerow(
-                [id_, (ficha or "").replace("\r\n", " | ").replace("\n", " | ")])
+                [id_,
+                 (filas[n].get("parte1") or "").strip(),
+                 (filas[n].get("parte2") or "").strip(),
+                 (ficha or "").replace("\r\n", " | ").replace("\n", " | ")])
     except OSError:
         pass
     return f"CSV bloqueado (abierto en Excel): la ficha quedo en {respaldo.name}"
@@ -175,7 +182,9 @@ async def volver_formulario(s, hwnd: int, intentos: int = 3) -> bool:
             if await ir_al_5250(s, hwnd):
                 img, _ = captura(hwnd)
                 st0 = clasificar(img, usar_jev=False)
-        if st0.get("estado") == "formulario":
+        # 'sin_coincidencia' es el formulario con el aviso de "no encontrada":
+        # ya se puede escribir la direccion siguiente encima (regla 03/11).
+        if st0.get("estado") in ("formulario", "sin_coincidencia"):
             return True
         if intento == 0:
             await pf.step(s, "esc_inhibido", "press_keys", {"keys": ["escape"]})
@@ -335,6 +344,12 @@ def merge_fichas_pendientes() -> int:
 
     Upsert por id: gana la ultima. El respaldo se borra solo si el merge
     termino bien, para no perder fichas. Se llama al arrancar la corrida.
+
+    El respaldo nuevo trae 4 campos (id; parte1; parte2; ficha): antes de
+    volcarla se comprueba que la direccion siga siendo la misma que la de esa
+    fila del CSV. Con el id posicional, un cambio de fila del operador pondria
+    la ficha de un edificio en otro. Las de 2 campos (formato viejo) se vuelcan
+    sin esa comprobacion porque no traen la direccion.
     """
     if not PENDIENTES.exists():
         return 0
@@ -343,12 +358,24 @@ def merge_fichas_pendientes() -> int:
             filas = [r for r in csv.reader(f, delimiter=";") if r and r[0].strip()]
     except (OSError, csv.Error, UnicodeDecodeError):
         return 0
+    actuales = {f.get("id"): f for f in lee_direcciones()}
     recuperadas = 0
     fallidas = []
     for r in filas:
         if len(r) < 2:
             continue
-        if escribe_ficha(r[0].strip(), r[1].strip()) == "":
+        id_ = r[0].strip()
+        if len(r) >= 4:
+            cur = actuales.get(id_) or {}
+            if (normaliza_dir(r[1]) != normaliza_dir(cur.get("direccion_parte1")) or
+                    normaliza_dir(r[2]) != normaliza_dir(cur.get("direccion_parte2"))):
+                print(f"  respaldo {id_}: la direccion cambio "
+                      f"({r[1]} {r[2]}); se descarta la ficha", flush=True)
+                continue
+            ficha = r[3] if len(r) > 3 else ""
+        else:
+            ficha = r[1]
+        if escribe_ficha(id_, ficha) == "":
             recuperadas += 1
         else:
             fallidas.append(r)
@@ -545,6 +572,13 @@ async def entrar_formulario(s, hwnd: int) -> bool:
     # item siguiente se quemaria en B1 sin intentar nada. Medido el 28/10: D02
     # termino con 'B3 estado error' y D03 aborto sin arrancar. ESC limpia el
     # aviso antes de rendirse (mismo patron que el NAV de aqui abajo).
+    # REGLA DEL OPERADOR (03/11): cuando la direccion no existe, abajo sale
+    # 'La direccion no esta en el archivo', pero el formulario SIGUE en
+    # pantalla. No se limpia con ESC ni con F3: simplemente se empieza a
+    # escribir la direccion de la fila siguiente encima. Por eso
+    # 'sin_coincidencia' = formulario con aviso, y se continua.
+    if r.get("estado") == "sin_coincidencia":
+        return True
     if r.get("estado") == "error":
         await pf.step(s, "esc_residual", "press_keys", {"keys": ["escape"]})
         await asyncio.sleep(0.6)
@@ -604,6 +638,12 @@ async def entrar_formulario(s, hwnd: int) -> bool:
     return False
 
 
+async def _pausa(seg: float) -> None:
+    """Espera del perfil de velocidad (0 = no hay deficit que rellenar)."""
+    if seg > 0:
+        await asyncio.sleep(seg)
+
+
 async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                   desde_pagina: int = 0, solo_ficha: bool = False) -> dict:
     """Un item completo. Nunca lanza: devuelve el resultado para el ledger.
@@ -614,6 +654,12 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
     anterior, sin volver a pegar sus filas.
     """
     inicio = time.time()
+    # Perfil de velocidad: el techo son segundos por direccion. El deficit se
+    # reparte en pausas naturales (revisar el formulario, leer la ficha,
+    # procesar una pagina, cerrar) con variacion aleatoria, para que el ritmo
+    # no sea una maquina de pulsos. Si no se alcanza el techo, se dice.
+    perf = perfil.actual()
+    objetivo = perf["s_dir"]
     id_ = fila.get("id", "")
     parte1 = fila.get("direccion_parte1", "")
     parte2 = fila.get("direccion_parte2", "")
@@ -648,7 +694,12 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                 st = clasificar(img, usar_jev=False)
                 traza.evento("estado", st["estado"] or "desconocido",
                              detalle=f"{id_} tras reconectar")
-            if st["estado"] != "formulario":
+            # 'sin_coincidencia' es el MISMO formulario con el aviso de la
+            # busqueda anterior ("La calle no se encuentra..."). El operador
+            # manda escribir la siguiente direccion encima, sin limpiar nada,
+            # asi que para B1 cuenta como formulario (medido 03/11: sin esto
+            # todas las direcciones siguientes morian con 'B1 sin_coincidencia').
+            if st["estado"] not in ("formulario", "sin_coincidencia"):
                 res["notas"] = f"B1 pantalla {st['estado']}"
                 return res
 
@@ -669,6 +720,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                     continue
                 return res
 
+            await _pausa(perfil.pausa(inicio, "antes_f10", objetivo))
             await pf.step(s, "f10", "press_keys", {"keys": ["f10"]})
             await asyncio.sleep(0.8)
 
@@ -761,6 +813,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                 aviso_ficha = escribe_ficha(id_, ficha or "")
                 if aviso_ficha:
                     print(f"  aviso: {aviso_ficha}", flush=True)
+            await _pausa(perfil.pausa(inicio, "tras_ficha", objetivo))
 
             if solo_ficha:
                 nota = ("solo ficha: no se extrajo (la extraccion de esta "
@@ -825,6 +878,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                     continue
                 bloques += 1
                 hechos_hoy += 1
+                await _pausa(perfil.pausa(inicio, "entre_paginas", objetivo))
                 # B6 por pagina: lo pegado se registra YA. Si AnyDesk corta la
                 # sesion en la pagina siguiente, el ledger dice cuantas
                 # quedaron pegadas y la corrida reanuda ahi en vez de repetir.
@@ -864,10 +918,6 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
             res["paginas_vistas"] = bloques + saltadas
             res["filas_copiadas"] = bloques * FILAS_POR_BLOQUE
             res["estado"] = "ok"
-            res["notas"] = (f"{bloques} bloques x {FILAS_POR_BLOQUE} filas"
-                            + (f"; {saltadas} paginas vacias saltadas"
-                               if saltadas else "")
-                            + (f"; {aviso_ficha}" if aviso_ficha else ""))
             img_fin, _vp_fin = captura(hwnd)
             res["evidencia"] = str(native_shot.save(img_fin, f"{id_}-fin"))
             res["ficha"] = ficha or ""
@@ -875,6 +925,13 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                 await volver_formulario(s, hwnd)
             # En dry no se vuelve aqui: lo hace main() con entrar_formulario(),
             # que cubre tambien los caminos de halt y error.
+            await _pausa(perfil.pausa(inicio, "cierre", objetivo))
+            res["notas"] = (f"{bloques} bloques x {FILAS_POR_BLOQUE} filas"
+                            + (f"; {saltadas} paginas vacias saltadas"
+                               if saltadas else "")
+                            + (f"; {aviso_ficha}" if aviso_ficha else "")
+                            + f"; {perf['nombre']} {time.time() - inicio:.1f}"
+                              f"/{objetivo:.1f}s")
             return res
         except pf.Halt as exc:
             res["notas"] = f"halt: {exc}"

@@ -425,5 +425,65 @@ class TestReencuadreNoTumbaElLote(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(res), 2)
 
 
+class TestFormularioConAviso(unittest.IsolatedAsyncioTestCase):
+    """El aviso 'La calle no se encuentra' no corta el lote.
+
+    Medido el 03/11: tras una direccion que no existe, la pantalla queda en
+    'sin_coincidencia' (el mismo formulario con el aviso abajo). B1 exigia
+    literalmente 'formulario' y todas las direcciones siguientes morian con
+    'B1 pantalla sin_coincidencia' en 2 segundos cada una.
+    """
+
+    async def test_b1_acepta_sin_coincidencia_y_teclea_la_siguiente(self):
+        llamadas = {"buscar": 0}
+
+        async def fake_step(s, label, name, args=None):
+            return {"ok": True}
+
+        async def fake_entrar(s, hwnd):
+            return True
+
+        async def fake_buscar(s, hwnd, det, p1, p2):
+            llamadas["buscar"] += 1
+
+        async def fake_verifica(hwnd):
+            return True, ""
+
+        async def fake_espera(hwnd, objetivos, intentos=8, delay=0.7):
+            return {"estado": "sin_coincidencia", "senales": {"form": True},
+                    "texto": "", "confianza": 0.9}
+
+        async def fake_login(s, hwnd, img=None):
+            return False
+
+        async def fake_sleep(*_a, **_k):
+            return None
+
+        filas = [{"field_x": 531, "cy": 100 + i} for i in range(8)]
+        with patch.object(L, "captura", lambda h: ("IMG", {})), \
+                patch.object(L, "clasificar", lambda img, usar_jev=False:
+                             {"estado": "sin_coincidencia",
+                              "senales": {"form": True}, "confianza": 0.9,
+                              "texto": ""}), \
+                patch.object(L, "entrar_formulario", fake_entrar), \
+                patch.object(L, "buscar", fake_buscar), \
+                patch.object(L, "verifica_texto", fake_verifica), \
+                patch.object(L, "espera_estado", fake_espera), \
+                patch.object(L.pf, "step", fake_step), \
+                patch.object(L.pf, "shot", lambda h, et: "IMG"), \
+                patch.object(L.rowdet, "detect", lambda h: ("IMG", {}, filas)), \
+                patch.object(L.traza, "evento", lambda *a, **k: None), \
+                patch.object(L, "login_si_hace_falta", fake_login), \
+                patch.object(L, "reconecta_si_hace_falta", lambda h: True), \
+                patch.object(L, "hay_dialogo", lambda h: False), \
+                patch.object(L.asyncio, "sleep", fake_sleep):
+            res = await L.procesa(_fila(), 123, object())
+
+        self.assertEqual(llamadas["buscar"], 1,
+                         f"B1 no dejo teclear: {res.get('notas')}")
+        self.assertNotIn("B1 pantalla", res.get("notas") or "")
+        self.assertEqual(res["estado"], "no_encontrado")
+
+
 if __name__ == "__main__":
     unittest.main()

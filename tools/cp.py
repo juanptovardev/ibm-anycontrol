@@ -28,6 +28,7 @@ import sys
 from PIL import Image
 
 import preflight_auto as pf
+import perfil
 from _mcp import connect, need_hwnd
 from estado import captura, clasificar, clasificar_rapido, ocr_text
 
@@ -36,6 +37,7 @@ BAJAR_INICIO = 7
 ANCHO = 72
 ALTO = 14
 KEY_DELAY_MS = 35  # 93 teclas -> ~6 s; por debajo se pierden pulsaciones
+                   # (este es el minimo tecnico: el perfil manda, ver perfil.py)
 
 SEL_MIN_ANCHO = 500   # medido: el bloque de 72 columnas mide 690 px de ancho
 SEL_ROW_MIN = 300     # fila de borde: 683 px medidos en captura real
@@ -101,10 +103,10 @@ async def _seleccionar(s, hwnd: int, dry: bool) -> tuple:
     vertical antes de tiempo y el bloque sale corrido.
     """
     await pf.step(s, "bajar_inicio", "press_keys",
-                  {"keys": ["down"] * BAJAR_INICIO, "key_delay_ms": KEY_DELAY_MS})
+                  {"keys": ["down"] * BAJAR_INICIO, "key_delay_ms": perfil.key_delay_ms()})
     teclas = ["shift"] + ["right"] * ANCHO + ["down"] * ALTO
     await pf.step(s, "seleccion", "press_keys",
-                  {"keys": teclas, "key_delay_ms": KEY_DELAY_MS})
+                  {"keys": teclas, "key_delay_ms": perfil.key_delay_ms()})
     await asyncio.sleep(0.3)
     img = pf.shot(hwnd, "cp-sel" if not dry else "cp-sel-dry")
     caja, alto_sel = sel_box(img)

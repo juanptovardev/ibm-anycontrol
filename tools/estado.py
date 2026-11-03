@@ -74,7 +74,9 @@ RE_DURO = re.compile(
     re.IGNORECASE,
 )
 RE_NO_ENCONTRADO = re.compile(
-    r"NO\s+SE\s+ENCUENTRA|NO\s+ESTA\s+EN\s+EL\s+ARCHIVO", re.IGNORECASE
+    # Tesseract lee la 'a' acentuada de 'está' como '6' (medido), asi que el
+    # aviso real 'La direccion no esta en el archivo' puede salir 'no est6'.
+    r"NO\s+SE\s+ENCUENTRA|NO\s+EST[A6]\s+EN\s+EL\s+ARCHIVO", re.IGNORECASE
 )
 # La cabecera real del formulario es "CONSULTA EDIFICIO-CUENTA MATRIZ". Sin
 # exigir "CUENTA MATRIZ" esta regex tambien casa con la opcion de menu
