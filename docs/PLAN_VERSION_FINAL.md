@@ -98,6 +98,18 @@ tinta 8 ms · diff 10 ms.
 
 ## 5. Tareas priorizadas
 
+**Estado al 03/11/2026 (después de la corrida completa de 121 direcciones):**
+
+| Tarea                                  | Estado                                            | Commit    |
+| -------------------------------------- | ------------------------------------------------- | --------- |
+| T1 puerto a `master`                   | **HECHO**                                         | `046190b` |
+| T2 modularización 0.3                  | PENDIENTE (riesgo medio; la suite es la red)      | -         |
+| T3 contrato de columnas de la hoja     | PENDIENTE                                         | -         |
+| T4 ahorro de OCR                       | **REFORMULADO** (medido: el OCR por página ya es 1) | -         |
+| T5 modo "lado a lado"                  | PENDIENTE (requiere al operador)                  | -         |
+| T6 fusión de teclas / fuera `sel_box`  | **PARCIAL**: E4 HECHO, E3 CANCELADO               | -         |
+| T7 tope de reintentos                  | **PARCIAL**: tope HECHO, detección de atasco PENDIENTE | -   |
+
 ### T1 — Portar `piloto100` a `master` (riesgo: nulo)
 Todo lo que hoy solo existe en la rama `piloto100`: los fixes de
 `sin_coincidencia`, los perfiles, las optimizaciones, la capa B, el fix del
@@ -126,11 +138,17 @@ Hoy se pega "donde quedó el cursor". El contrato debe:
 **Criterio**: con la hoja vacía y con cabecera cambiada, el agente dice qué espera
 y qué encontró, y no pega nada.
 
-### T4 — E2: cachear la cabecera `Suscript` (riesgo: bajo)
-La cabecera del listado está en el mismo píxel dentro del mismo edificio. Se
-cachea por edificio y solo se cuentan suscriptores por píxeles (8 ms).
-**Criterio**: en la 2ª página de un edificio no se ejecuta OCR de pantalla
-completa; el conteo de suscriptores sigue siendo correcto.
+### T4 — Ahorro de OCR (riesgo: bajo) — REFORMULADO
+**Lo que se cae al medir**: el OCR de pantalla completa por página **ya es uno
+solo**: `pagina.avanza` lo hace y `ciclo.extrae` lo reutiliza (`previo`), así que
+cachear la cabecera **no ahorra OCR** (las palabras de ese mismo OCR son las que
+dan los códigos y la última fila).
+**El ahorro real que queda** (≈930 ms por dirección, 4 %): `espera_estado` ya
+paga un OCR para clasificar la pantalla tras el F10; si ese mismo OCR devolviera
+las palabras, el primer bloque de cada dirección lo reutilizaría y no haría
+falta un segundo.
+**Criterio**: en la 1ª página de cada dirección no se ejecuta un segundo OCR de
+pantalla completa; el conteo de suscriptores sigue siendo correcto.
 
 ### T5 — Modo "lado a lado": quitar el `Alt+Tab` (riesgo: medio, **es la palanca de las 6 h**)
 El `Alt+Tab` cuesta 1–3 s por cada ida y vuelta (2–6 s por página) y es la
@@ -139,13 +157,25 @@ la vez** en el escritorio remoto, se sustituye por un clic directo.
 **Requiere**: que el operador deje el remoto en esa disposición (una vez).
 **Criterio**: con el modo lado a lado, una dirección baja de 24 s a ≤19 s.
 
-### T6 — E3/E4: más fusión de teclas y fuera `sel_box` (riesgo: bajo)
+### T6 — E3/E4: más fusión de teclas y fuera `sel_box` (riesgo: bajo) — PARCIAL
+- **E4 HECHO**: `ciclo.extrae` ya no mide el marco amarillo (`cp.sel_box`,
+  178 ms) ni hace la captura `ciclo-sel` (61 ms). Motivo medido: con el clic
+  x=917 el detector da **falsos negativos** (el operador validó la selección a
+  mano y el marco salía `None`), así que era un dato poco fiable en el camino
+  caliente. Ahorro: ~240 ms por página.
+- **E3 CANCELADO**: el flujo ya **no** usa las 93 teclas del plan B (usa
+  Shift+clic), así que no hay fusión de teclas que hacer en el bloque. La
+  fusión de la búsqueda (`clic → der → izq → Suprimir → +` en una sola llamada)
+  sigue vigente.
 **Criterio**: el bloque baja de 9 s a ≤6,5 s.
 
-### T7 — Fiabilidad: tope de reintentos y detección de atasco
-Un `error` se reintenta en cada vuelta del supervisor (hasta 8). Con tope por
-dirección y detección de N fallos seguidos, el supervisor para y avisa en vez de
-insistir.
+### T7 — Fiabilidad: tope de reintentos y detección de atasco — PARCIAL
+- **Tope por dirección HECHO** (`supervisor.MAX_FALLOS_DIRECCION = 3`): una
+  dirección que falla tres vueltas seguidas se **congela**: el supervisor deja
+  de relanzarla y la lista en el informe final como "requiere atención". Antes
+  un `error` se reintentaba en cada vuelta (hasta 8 veces).
+- **Detección de atasco PENDIENTE**: hoy el supervisor se detiene tras 2 vueltas
+  sin avanzar; falta que avise de *qué* falla en cada una.
 **Criterio**: 3 direcciones con el mismo fallo → el supervisor para y lo dice.
 
 ## 6. Lo que se descarta (decidido)

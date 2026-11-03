@@ -268,6 +268,28 @@ def escribe_estado(**datos) -> None:
 
 
 # ------------------------------------------------------------ main
+# Una direccion que falla y vuelve a fallar no se reintenta eternamente: al
+# tercer fallo se congela y el informe la lista como "requiere atencion".
+MAX_FALLOS_DIRECCION = 3
+
+
+def nuevos_congelados(est: dict, fallos: dict,
+                      max_fallos: int = MAX_FALLOS_DIRECCION) -> list[str]:
+    """Direcciones que fallan y alcanzan el tope de fallos.
+
+    `est` es el ledger (id -> fila); solo cuentan las filas en 'error'.
+    Actualiza `fallos` y devuelve los ids que toca congelar.
+    """
+    nuevos = []
+    for id_, fila in (est or {}).items():
+        if (fila or {}).get("estado") != "error":
+            continue
+        fallos[id_] = fallos.get(id_, 0) + 1
+        if fallos[id_] >= max_fallos:
+            nuevos.append(id_)
+    return nuevos
+
+
 def corre(dry: bool = False, ids: str | None = None, max_vueltas: int = 8,
           max_sin_avance: int = 2, horas: float = 8.0,
           sin_progreso: int = 240, tope_vuelta: int = 5400,
@@ -296,6 +318,9 @@ def corre(dry: bool = False, ids: str | None = None, max_vueltas: int = 8,
     sin_avance = 0
     anterior = None
     vuelta = 0
+    fallos: dict[str, int] = {}
+    congelados: set[str] = set()
+    pedido = [i.strip() for i in ids.split(",") if i.strip()] if ids else None
     try:
         while vuelta < max_vueltas and time.time() < limite:
             accion = control()
@@ -309,7 +334,9 @@ def corre(dry: bool = False, ids: str | None = None, max_vueltas: int = 8,
                     break
             vuelta += 1
             est = estados()
-            faltan = pendientes(est)
+            faltan = [i for i in pendientes(est) if i not in congelados]
+            if pedido is not None:
+                faltan = [i for i in faltan if i in pedido]
             print(f"\n=== VUELTA {vuelta} | pendientes: {len(faltan)}/{cuantas} ===",
                   flush=True)
             if not faltan:
@@ -317,11 +344,20 @@ def corre(dry: bool = False, ids: str | None = None, max_vueltas: int = 8,
                 break
             escribe_estado(vuelta=vuelta, pendientes=len(faltan), total=cuantas,
                            estado="corriendo", hora=time.strftime("%H:%M:%S"))
-            proc, log = lanza(vuelta, dry, ids, perf, teclas)
+            proc, log = lanza(vuelta, dry, ",".join(faltan), perf, teclas)
             print(f"  log: {log.name}", flush=True)
             codigo, motivo = vigila(proc, log, sin_progreso, tope_vuelta)
             est = estados()
-            despues = len(pendientes(est))
+            # Una direccion que vuelve a fallar se cuenta; al tercer fallo se
+            # congela para no gastar el lote con un caso que no se va a
+            # resolver solo (el lote tampoco termina asi: queda en "requiere
+            # atencion" en el informe).
+            for id_ in nuevos_congelados(est, fallos):
+                if id_ not in congelados:
+                    congelados.add(id_)
+                    print(f"  DIRECCION CONGELADA {id_}: {fallos[id_]} fallos "
+                          f"consecutivos, no se reintenta mas", flush=True)
+            despues = len([i for i in pendientes(est) if i not in congelados])
             print(f"  vuelta {vuelta}: {motivo} (codigo={codigo}) | "
                   f"pendientes: {despues}/{cuantas}", flush=True)
             if anterior is not None and despues >= anterior:
@@ -352,8 +388,12 @@ def corre(dry: bool = False, ids: str | None = None, max_vueltas: int = 8,
         est = estados()
         print("\n=== INFORME FINAL ===")
         print(resumen(est, cuantas))
+        if congelados:
+            print("congeladas (no se reintentaron mas): "
+                  + ", ".join(sorted(congelados)))
         escribe_estado(vuelta=vuelta, pendientes=len(pendientes(est)),
                        total=cuantas, estado="terminado",
+                       congelados=sorted(congelados),
                        hora=time.strftime("%H:%M:%S"))
     return 0
 

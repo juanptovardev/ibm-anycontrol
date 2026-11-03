@@ -79,9 +79,11 @@ async def extrae(s, hwnd: int, dry: bool = False, bajar: bool = True,
     # remoto recibia el clic SIN shift). 0.25 s basta para que el 5250 aplique
     # la seleccion; antes se dormia 0.5 s.
     await asyncio.sleep(0.25)
-    img = pf.shot(hwnd, "ciclo-sel")
-    caja, alto = cp.sel_box(img)
-    print(f"A2 seleccion caja={caja} alto={alto} (informativo)", flush=True)
+    # Ni captura extra ni `sel_box`: medido que el marco amarillo da falsos
+    # negativos con el clic x=917 (el operador valido la seleccion a mano y el
+    # detector devolvia None), asi que no era una puerta sino un dato
+    # poco fiable que costaba 240 ms por pagina. La evidencia de lo pegado
+    # queda en cp-pre-paste / cp-post-paste.
     if dry:
         await pf.step(s, "limpiar", "press_keys", {"keys": ["escape"]})
         print("DRY: seleccionada, sin copiar", flush=True)
