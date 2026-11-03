@@ -67,8 +67,60 @@ def escribe(filas_cab: list[str], ruta: Path = LEDGER) -> None:
         raise
 
 
+def _num_id(id_: str) -> int:
+    """D01 -> 1. Los ids son posicionales (los deriva la lectura del CSV)."""
+    try:
+        return int(str(id_).strip().lstrip("Dd"))
+    except ValueError:
+        return 0
+
+
+def reinicia_desde(cab: list[str], desde: str, ruta: Path = LEDGER) -> int:
+    """Pone en estado pendiente las direcciones desde `desde` (id) en adelante.
+
+    Se usa cuando una direccion quedo mal pegada y hay que rehacerla desde la
+    pagina 1: las de antes se dejan como estan (se saltan) y las de despues
+    vuelven a la cola. Se escribe atomico y en el formato del repo.
+    """
+    with open(ruta, encoding="utf-8-sig", newline="") as fh:
+        filas = list(csv.DictReader(fh, delimiter=";"))
+    limite = _num_id(desde)
+    cambiadas = 0
+    salida = []
+    for f in filas:
+        if _num_id(f.get("id", "")) >= limite:
+            f["estado"] = "error"
+            f["paginas_vistas"] = "0"
+            f["filas_copiadas"] = "0"
+            f["hora_fin"] = ""
+            f["notas"] = "reinicio manual: se rehace desde la pagina 1"
+            cambiadas += 1
+        salida.append({c: f.get(c, "") for c in cab})
+    tmp = ruta.with_suffix(ruta.suffix + ".tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8-sig", newline="") as fh:
+            w = csv.writer(fh, delimiter=";", quoting=csv.QUOTE_MINIMAL)
+            w.writerow(cab)
+            for f in salida:
+                w.writerow([f.get(c, "") for c in cab])
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, ruta)
+    except BaseException:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise
+    return cambiadas
+
+
 def main(argv: list[str]) -> int:
     dry = "--dry" in argv
+    desde = None
+    for a in argv:
+        if a.startswith("--desde="):
+            desde = a.split("=", 1)[1].strip().upper()
     if not LEDGER.exists():
         print(f"falta {LEDGER}", file=sys.stderr)
         return 1
@@ -90,6 +142,20 @@ def main(argv: list[str]) -> int:
         print(f"no se pudo guardar el respaldo: {exc}", file=sys.stderr)
         return 1
     print(f"respaldo: {respaldo}")
+
+    if desde:
+        try:
+            cambiadas = reinicia_desde(cab, desde, LEDGER)
+        except PermissionError:
+            print("el ledger esta abierto en Excel: cierralo y reintenta",
+                  file=sys.stderr)
+            return 2
+        except OSError as exc:
+            print(f"no se pudo escribir: {exc}", file=sys.stderr)
+            return 1
+        print(f"direcciones reiniciadas desde {desde}: {cambiadas}")
+        print(f"filas despues: {_filas(LEDGER)}")
+        return 0
 
     try:
         escribe(cab, LEDGER)
