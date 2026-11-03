@@ -105,7 +105,7 @@ tinta 8 ms · diff 10 ms.
 | T1 puerto a `master`                   | **HECHO**                                         | `046190b` |
 | T2 modularización 0.3                  | PENDIENTE (riesgo medio; la suite es la red)      | -         |
 | T3 contrato de columnas de la hoja     | PENDIENTE                                         | -         |
-| T4 ahorro de OCR                       | **REFORMULADO** (medido: el OCR por página ya es 1) | -         |
+| T4 ahorro de OCR                       | **HECHO** (T4': el OCR del listado se reutiliza) | dbfa5c9 |
 | T5 modo "lado a lado"                  | PENDIENTE (requiere al operador)                  | -         |
 | T6 fusión de teclas / fuera `sel_box`  | **PARCIAL**: E4 HECHO, E3 CANCELADO               | -         |
 | T7 tope de reintentos                  | **PARCIAL**: tope HECHO, detección de atasco PENDIENTE | -   |
@@ -138,7 +138,7 @@ Hoy se pega "donde quedó el cursor". El contrato debe:
 **Criterio**: con la hoja vacía y con cabecera cambiada, el agente dice qué espera
 y qué encontró, y no pega nada.
 
-### T4 — Ahorro de OCR (riesgo: bajo) — REFORMULADO
+### T4 — Ahorro de OCR (riesgo: bajo) — HECHO (T4')
 **Lo que se cae al medir**: el OCR de pantalla completa por página **ya es uno
 solo**: `pagina.avanza` lo hace y `ciclo.extrae` lo reutiliza (`previo`), así que
 cachear la cabecera **no ahorra OCR** (las palabras de ese mismo OCR son las que
@@ -149,6 +149,17 @@ las palabras, el primer bloque de cada dirección lo reutilizaría y no haría
 falta un segundo.
 **Criterio**: en la 1ª página de cada dirección no se ejecuta un segundo OCR de
 pantalla completa; el conteo de suscriptores sigue siendo correcto.
+
+**RESULTADO (03/11, commit `dbfa5c9`)**: `estado.clasificar` ahora usa
+`ocr_completo` (una sola pasada de Tesseract, mismo coste) y devuelve la
+imagen y las palabras; `procesa` guarda esa lectura como `previo_inicial` y el
+primer bloque la reutiliza. **Seguridad**: si el detector no encuentra la
+cabecera con la captura reutilizada, `ciclo.extrae` recaptura y reintenta (el
+previo es una optimización, no la fuente de verdad) y la evidencia PNG
+`ciclo-antes` se sigue guardando. Tests: `tests/test_t4_ocr_reutilizado.py`
+(5 casos). Suite: **292 OK**.
+**Pendiente de medir en vivo**: el ahorro real por dirección (≈930 ms) y si el
+detector de la columna Suscript funciona igual con la captura reutilizada.
 
 ### T5 — Modo "lado a lado": quitar el `Alt+Tab` (riesgo: medio, **es la palanca de las 6 h**)
 El `Alt+Tab` cuesta 1–3 s por cada ida y vuelta (2–6 s por página) y es la
@@ -204,12 +215,33 @@ la vez** en el escritorio remoto, se sustituye por un clic directo.
 
 ## 8. Orden de ejecución
 
-1. **T1** — portar a `master` (deja el código bueno donde se trabaja).
-2. **T2** — modularizar (con la suite como red).
-3. **T3** — contrato de columnas (define el destino del pegado).
-4. **T4** — cache de cabecera.
-5. **T5** — modo lado a lado (requiere al operador).
-6. **T6/T7** — afinado de velocidad y de reinsistencia.
+1. **T1** — portar a `master` (deja el código bueno donde se trabaja). **HECHO** (`046190b`).
+2. **T2** — modularizar (con la suite como red). PENDIENTE: refactor transversal,
+   necesita un turno con contexto limpio.
+3. **T3** — contrato de columnas (define el destino del pegado). PENDIENTE.
+4. **T4** — ahorro de OCR. **HECHO** como T4' (`dbfa5c9`).
+5. **T5** — modo lado a lado (requiere al operador). PENDIENTE: es la palanca de
+   las 6 h y depende de que el operador deje el 5250 y Chrome visibles.
+6. **T6/T7** — afinado de velocidad y de reinsistencia. **PARCIAL**: E4 y el tope
+   de reintentos hechos (`279216b`); E3 cancelado (el flujo usa Shift+clic, no
+   las 93 teclas del plan B).
+
+### Estado al 03/11 (cierre de este tramo)
+
+| Tarea | Estado | Commit |
+| --- | --- | --- |
+| T1 puerto a master | HECHO | `046190b` |
+| T4' reutilizar el OCR del listado | HECHO | `dbfa5c9` |
+| T6 E4 (fuera `sel_box` y `ciclo-sel`) | HECHO | `279216b` |
+| T7 tope de reintentos por dirección | HECHO | `279216b` |
+| T6 E3 (fusionar teclas del bloque) | CANCELADO | - |
+| T2 modularización | PENDIENTE | - |
+| T3 contrato de columnas | PENDIENTE | - |
+| T5 modo lado a lado | PENDIENTE (operador) | - |
+
+Suite al cierre: **292 tests OK**. Motor medido en vivo: 24–25 s/dirección
+(antes 28,9 s). Techos de perfil: Sigiloso 27,5 (se cumple) · Humano 18,3 ·
+Rápido 12,2 · Psicópata 9,15 (inalcanzable, suelo 12,6).
 
 Cada tarea se cierra con la suite en verde y una entrada en
 `docs/engineering/ESTADO_ORQUESTACION.md`.
