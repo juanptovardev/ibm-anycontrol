@@ -11,16 +11,22 @@ Reglas del emulador que aqui estan codificadas (medidas, no supuestas):
 """
 
 import asyncio
+import os
 import time
 
 import preflight_auto as pf
 import rows as rowdet
-from estado import captura
+from estado import captura, ocr_text
 
 NOMBRE = 0
 CALLE = 1
 CASA = 2
 INK_MIN = pf.INK_MIN
+# Verbosidad: con MATRIZ_VERBOSE=1 se lee el formulario entero antes del F10.
+# La constante vivia en loop.py y al mover verifica_texto a este modulo se
+# quedo atras: el NameError solo aparecia en vivo (ningun test ejecutaba esta
+# funcion de verdad). El chequeo estatico de nombres libres lo detecta.
+VERBOSE = os.environ.get("MATRIZ_VERBOSE") == "1"
 
 async def buscar(s, hwnd: int, det: list, parte1: str, parte2: str) -> None:
     """Macro de busqueda validada: clic, flechas, step1, +, step2, +, F10.

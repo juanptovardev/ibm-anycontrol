@@ -49,7 +49,7 @@ import vigia
 import ventana
 from _mcp import connect, need_hwnd
 from estado import captura, clasificar, ocr_text
-from matriz_buscar import (NOMBRE, CALLE, CASA, INK_MIN, buscar,
+from matriz_buscar import (NOMBRE, CALLE, CASA, INK_MIN, VERBOSE, buscar,
                             verifica_texto)
 from matriz_ficha import (escribe_ficha, lee_direcciones,
                           merge_fichas_pendientes, normaliza_dir)
@@ -67,9 +67,6 @@ REINTENTOS = 1
 # El bloque del operador son 15 filas (7 abajo + 14 de alto).
 FILAS_POR_BLOQUE = 15
 MAX_PAGINAS = 40
-# Verbosidad: con MATRIZ_VERBOSE=1 se lee el formulario entero antes del F10
-# (cuesta ~1 s de OCR por direccion).
-VERBOSE = os.environ.get("MATRIZ_VERBOSE") == "1"
 CTRL = Path(__file__).resolve().parent.parent / "datos" / "control.json"
 
 
