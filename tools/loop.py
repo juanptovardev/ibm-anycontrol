@@ -46,6 +46,7 @@ import recepcion
 import rows as rowdet
 import traza
 import vigia
+import ventana
 from _mcp import connect, need_hwnd
 from estado import captura, clasificar, ocr_text
 from matriz_buscar import (NOMBRE, CALLE, CASA, INK_MIN, buscar,
@@ -349,12 +350,15 @@ def en_ibm(st: dict) -> bool:
     return st.get("estado") in ESTADOS_IBM
 
 
-async def ir_al_5250(s, hwnd: int, intentos: int = 4) -> bool:
-    """Si el remoto quedo en el navegador, vuelve al 5250 con Alt+Tab.
+async def ir_al_5250(s, hwnd: int, intentos: int = 2) -> bool:
+    """Si el remoto quedo en el navegador, vuelve al 5250.
 
-    Medido el 28/10: tras pegar en la hoja el remoto se queda en Chrome y
-    todo lo demas (ESC, F3, F12, la secuencia del operador) no hace nada,
-    porque las teclas van al navegador y no al 5250.
+    El 03/11 el Alt+Tab dejo de llegar al escritorio remoto: medido con la
+    sonda de teclas, la pantalla no cambiaba ni desde el 5250 ni desde
+    Chrome, y el pre-vuelo se rindio tras 4 intentos. La via principal es
+    ahora el **icono de la taskbar** (ventana.ir_a, cambio en 0,3 s), que
+    es ademas la via que usa el pegado. El Alt+Tab queda como ultimo
+    recurso, por si la taskbar cambia de disposicion.
 
     Ademas el remoto tarda 1-3 s en procesar el Alt+Tab, asi que despues de
     enviarlo se sondea la pantalla en vez de esperar un tiempo fijo.
@@ -363,9 +367,14 @@ async def ir_al_5250(s, hwnd: int, intentos: int = 4) -> bool:
         img, _ = captura(hwnd)
         if en_ibm(clasificar(img, usar_jev=False)):
             return True
+        ok = await ventana.ir_a(s, hwnd, ventana.DESTINO_IBM,
+                                intentos=2, espera=0.4)
+        img, _ = captura(hwnd)
+        if ok and en_ibm(clasificar(img, usar_jev=False)):
+            return True
         await pf.step(s, f"alt_tab_ibm_{i}", "press_keys", {"keys": ["alt", "tab"]})
         for _ in range(3):
-            await asyncio.sleep(0.8)
+            await asyncio.sleep(0.6)
             img, _ = captura(hwnd)
             if en_ibm(clasificar(img, usar_jev=False)):
                 return True
