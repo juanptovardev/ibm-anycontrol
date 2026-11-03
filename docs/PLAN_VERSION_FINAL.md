@@ -106,7 +106,7 @@ tinta 8 ms · diff 10 ms.
 | T2 modularización 0.3                  | PENDIENTE (riesgo medio; la suite es la red)      | -         |
 | T3 contrato de columnas de la hoja     | PENDIENTE                                         | -         |
 | T4 ahorro de OCR                       | **HECHO** (T4': el OCR del listado se reutiliza) | dbfa5c9 |
-| T5 modo "lado a lado"                  | PENDIENTE (requiere al operador)                  | -         |
+| T5 cambio de ventana por taskbar       | HECHO (`552f524` + `d217614`)                 | `d217614`   |
 | T6 fusión de teclas / fuera `sel_box`  | **PARCIAL**: E4 HECHO, E3 CANCELADO               | -         |
 | T7 tope de reintentos                  | **PARCIAL**: tope HECHO, detección de atasco PENDIENTE | -   |
 
@@ -161,12 +161,35 @@ previo es una optimización, no la fuente de verdad) y la evidencia PNG
 **Pendiente de medir en vivo**: el ahorro real por dirección (≈930 ms) y si el
 detector de la columna Suscript funciona igual con la captura reutilizada.
 
-### T5 — Modo "lado a lado": quitar el `Alt+Tab` (riesgo: medio, **es la palanca de las 6 h**)
-El `Alt+Tab` cuesta 1–3 s por cada ida y vuelta (2–6 s por página) y es la
-causa número uno de fallos intermitentes. Si el 5250 y Chrome quedan **visibles a
-la vez** en el escritorio remoto, se sustituye por un clic directo.
-**Requiere**: que el operador deje el remoto en esa disposición (una vez).
-**Criterio**: con el modo lado a lado, una dirección baja de 24 s a ≤19 s.
+### T5 — Quitar el `Alt+Tab` (riesgo: medio, **es la palanca de las 6 h**) — HECHO
+El `Alt+Tab` cuesta 1–3 s por cada ida y vuelta (2–6 s por página) y era la
+causa número uno de fallos intermitentes. El 03/11 el `Alt+Tab` **dejó de
+llegar al remoto** por completo (medido: ni desde el 5250 ni desde Chrome la
+pantalla cambiaba) → el pegado se abortó en G2 en 3 de 3 direcciones de prueba.
+
+**Solución implementada (`tools/ventana.py`, commits `552f524` y `d217614`)**:
+en vez de `Alt+Tab`, se hace **clic en el icono de la taskbar** del escritorio
+remoto (Chrome a la izquierda, emulador 5250 a la derecha).
+- `buscar_icono(img, nombre)`: `cv2.matchTemplate` multiescala (5 escalas,
+  umbral 0,70) sobre la banda inferior de 48 px. Validadas 4/4: encuentra
+  Chrome y el emulador con **precisión de 1 px** tanto con el 5250 delante
+  como con Chrome delante.
+- `ventana.ir_a(s, hwnd, destino)`: comprueba con `tipo_pixeles` que NO está
+  ya allí (clic en el icono de una ventana levantada solo la minimiza),
+  busca el icono, hace clic, espera 0,4 s y verifica por píxeles. Si el icono
+  no aparece, cae al `Alt+Tab` como último recurso.
+- Medido: el cambio por taskbar es **inmediato (0,3 s)** frente a 1–3 s del
+  `Alt+Tab`. No requiere que el operador reorganice el escritorio.
+
+**Trampa encontrada**: el clic solo llega al escritorio remoto si AnyDesk está
+en primer plano. Sin `enfocar.set_objetivo(hwnd)` el clic se va a la terminal
+local (diagnosticado con `dbg_clic.py`: "AnyDesk delante? False"). Corregido en
+`ventana.main` y en el camino del agente (`enfocar.set_objetivo` ya lo fijaba
+`autonomo.corre`).
+
+**Efecto colateral bonus**: al no depender de la disposición de las ventanas,
+la tarea **no requiere** el modo "lado a lado" que se había propuesto.
+**Criterio**: pendiente de medir en vivo (24 s → objetivo ≤21 s por dirección).
 
 ### T6 — E3/E4: más fusión de teclas y fuera `sel_box` (riesgo: bajo) — PARCIAL
 - **E4 HECHO**: `ciclo.extrae` ya no mide el marco amarillo (`cp.sel_box`,
@@ -237,7 +260,7 @@ la vez** en el escritorio remoto, se sustituye por un clic directo.
 | T6 E3 (fusionar teclas del bloque) | CANCELADO | - |
 | T2 modularización | PENDIENTE | - |
 | T3 contrato de columnas | PENDIENTE | - |
-| T5 modo lado a lado | PENDIENTE (operador) | - |
+| T5 cambio de ventana por taskbar | HECHO (`552f524` + `d217614`) | `d217614` |
 
 Suite al cierre: **292 tests OK**. Motor medido en vivo: 24–25 s/dirección
 (antes 28,9 s). Techos de perfil: Sigiloso 27,5 (se cumple) · Humano 18,3 ·
