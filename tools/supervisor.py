@@ -44,7 +44,9 @@ LOCK = DATOS / "supervisor.lock"
 
 # Estados que ya no se vuelven a tocar: 'ok' esta hecho y 'no_encontrado' es
 # definitivo (el 5250 contesta 'La direccion no esta en el archivo').
-TERMINALES = ("ok", "no_encontrado")
+# 'pegado_dudoso' tambien es terminal: el bloque pudo pegarse y el remoto solo
+# tardo en pintarlo; reintentarlo lo duplicaria, asi que queda para revision.
+TERMINALES = ("ok", "no_encontrado", "pegado_dudoso")
 
 
 # ------------------------------------------------------------ lectura de datos

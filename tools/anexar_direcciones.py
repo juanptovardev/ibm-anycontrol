@@ -15,6 +15,7 @@ Formato de salida: BOM + CRLF + `;` + cabecera `parte1;parte2;ficha`
     python tools/anexar_direcciones.py hoja.csv --columna=1
     python tools/anexar_direcciones.py --portapapeles
     python tools/anexar_direcciones.py lista.txt --dry
+    python tools/anexar_direcciones.py --portapapeles --reemplazar
 """
 import csv
 import shutil
@@ -58,9 +59,15 @@ def escribe(filas: list[dict], ruta: Path = RUTA) -> Path:
     return ruta
 
 
-def anexar(lineas: list[str], ruta: Path = RUTA, dry: bool = False) -> int:
-    """Separa `lineas` y las anade al final. Devuelve cuantas se anadieron."""
-    actuales = lee(ruta)
+def anexar(lineas: list[str], ruta: Path = RUTA, dry: bool = False,
+           reemplazar: bool = False) -> int:
+    """Separa `lineas` y las anade al final. Devuelve cuantas se anadieron.
+
+    Con reemplazar=True la lista nueva SUSTITUYE a la anterior (se hace copia
+    de seguridad antes). El dedup pasa a ser solo dentro del lote nuevo: lo
+    que hay en el archivo viejo se descarta entero.
+    """
+    actuales = [] if reemplazar else lee(ruta)
     ya = {clave(f.get("parte1"), f.get("parte2")) for f in actuales}
     nuevas, repetidas, problemas = [], [], []
     for n, linea in enumerate(lineas, 1):
@@ -95,7 +102,12 @@ def anexar(lineas: list[str], ruta: Path = RUTA, dry: bool = False) -> int:
         shutil.copy2(ruta, copia)
         print(f"respaldo: {copia.name}")
     escribe(actuales + nuevas, ruta)
-    print(f"anadidas {len(nuevas)} direcciones (total {len(actuales) + len(nuevas)})")
+    if reemplazar:
+        print(f"sustituidas {len(nuevas)} direcciones por las nuevas "
+              f"(antes {len(lee(ruta))} lineas, ahora {len(nuevas)})")
+    else:
+        print(f"anadidas {len(nuevas)} direcciones "
+              f"(total {len(actuales) + len(nuevas)})")
     return len(nuevas)
 
 
@@ -103,6 +115,7 @@ def main(argv) -> int:
     args = [a for a in argv[1:] if not a.startswith("--")]
     dry = "--dry" in argv
     portapapeles = "--portapapeles" in argv
+    reemplazar = "--reemplazar" in argv
     columna = 0
     for a in argv[1:]:
         if a.startswith("--columna="):
@@ -119,7 +132,7 @@ def main(argv) -> int:
     except (FileNotFoundError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
-    n = anexar(lineas, dry=dry)
+    n = anexar(lineas, dry=dry, reemplazar=reemplazar)
     return 0 if n else 1
 
 

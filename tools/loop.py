@@ -32,6 +32,7 @@ import time
 from pathlib import Path
 
 import ciclo
+import cp
 import matriz_extraer
 import credenciales
 import enfocar
@@ -805,6 +806,11 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
         except pf.Halt as exc:
             res["notas"] = f"halt: {exc}"
             traza.evento("extraer", "fallo", detalle=f"{id_} {exc}")
+            if cp.MARCA_PEGADO_DUDOSO in str(exc):
+                # Puede que el bloque SI se haya pegado y el remoto solo
+                # tardara en pintarlo. Reintentar la direccion lo duplicaria,
+                # asi que se queda para revision (estado terminal).
+                res["estado"] = "pegado_dudoso"
             return res
         except Exception as exc:  # noqa: BLE001 - un item nunca tumba la tanda
             res["notas"] = f"{type(exc).__name__}: {exc}"
@@ -853,7 +859,7 @@ async def main(hwnd: int, solo_id: str | None, dry: bool = False,
     # tiempo. Para rehacerla a proposito: reset_ledger.py --desde=ID.
     pendientes = [f for f in filas
                   if (hechos.get(f.get("id"), {}).get("estado")
-                      not in ("ok", "no_encontrado"))]
+                      not in ("ok", "no_encontrado", "pegado_dudoso"))]
     if not pendientes:
         print("todo ya procesado (B7)")
         return 0

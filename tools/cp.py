@@ -50,6 +50,11 @@ SEL_COL_MIN = 100     # columna de borde: 309 px medidos en captura real
 SEL_MIN_ALTO = 150    # 15 filas ~320 px; 150 px = piso de 8 filas
 PASTE_MIN_DIFF = 3000  # pixeles cambiados para dar el pegado por bueno
 PASTE_MIN_CAMBIO = 800  # cambio minimo para creer que SI se pego algo (bloque de 1 fila)
+# Marca en el Halt cuando el pegado no se ve en la pantalla. Puede que SI se
+# haya pegado (el remoto tarda en pintar con la hoja llena), asi que la
+# direccion NO se reintenta: se queda para revision. Reintentar a ciegas
+# duplicaba el bloque (medido el 27/10 con D03).
+MARCA_PEGADO_DUDOSO = "pegado no visto"
 
 
 def _es_borde(r: int, g: int, b: int) -> bool:
@@ -151,7 +156,7 @@ async def _copiar(s) -> int:
     return len(lineas)
 
 
-async def _espera_pegado(hwnd: int, antes, intentos: int = 10,
+async def _espera_pegado(hwnd: int, antes, intentos: int = 25,
                          espera: float = 0.2) -> tuple:
     """Espera ACTIVA a que el pegado se vea: captura y compara cada 200 ms.
 
@@ -159,13 +164,16 @@ async def _espera_pegado(hwnd: int, antes, intentos: int = 10,
     ~150 ms, asi que se perdian ~450 ms por bloque. Se capturan sin guardar
     (solo la ultima se guarda como evidencia).
 
-    Son 2 s de margen (10 x 200 ms) a proposito: un pegado que el remoto pinta
+    Son 5 s de margen (25 x 200 ms) a proposito: un pegado que el remoto pinta
     tarde NO se puede confundir con un pegado que no ocurrio, porque el
     reintento automatico (que existia aqui) duplicaba el bloque en la hoja.
     Medido el 27/10: D03 quedo pegada dos veces (filas 36-50 y 51-65) porque
     el primer Ctrl+Shift+V si habia funcionado y el render tardo mas que la
     espera. Un bloque perdido se reanuda; uno duplicado hay que borrarlo a
     mano y contamina el dato.
+
+    El margen se subio de 2 s a 5 s para las corridas largas: con miles de
+    filas en la hoja, Chrome tarda mas en pintar y 2 s ya no eran margen.
     """
     mejor = 0
     img = antes
@@ -244,7 +252,10 @@ async def _pegar(s, hwnd: int) -> None:
     if diff < PASTE_MIN_CAMBIO:
         # No se reintenta el Ctrl+Shift+V: si el primer pegado si funciono y
         # el remoto solo tardo en pintarlo, reintentar DUPLICA el bloque.
-        raise pf.Halt("G3 el pegado no se ve: Ctrl+C no llego al portapapeles remoto")
+        # Tampoco se reintenta la direccion: con la hoja grande el render
+        # puede tardar y no saber si se pego. Se marca para revision.
+        raise pf.Halt("G3 " + MARCA_PEGADO_DUDOSO +
+                      ": la pagina se queda para revision, no se reintenta")
     if diff < PASTE_MIN_DIFF:
         # Algo se pego (bloque de una sola fila cambio menos pixeles de lo
         # normal). Se acepta y se deja constancia; no se reintenta.
