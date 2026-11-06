@@ -3,20 +3,78 @@
 Solo lectura sobre el estado (traza, ledger, capturas) y una bandera de
 control que el bucle consulta entre bloques.
 
-Uso: python tools/ui.py            -> http://127.0.0.1:8765
+Uso: python tools/ui.py            -> http://127.0.0.1:8765/?k=<token>
      python tools/ui.py --puerto 9000
+
+Escucha en 0.0.0.0 para poder mirarlo desde el celular en la misma red.
+Toda peticion exige el token (?k=...): sin el responde 403 porque el panel
+muestra la pantalla del remoto y direcciones de clientes.
 """
 import csv
 import json
+import os
+import secrets
+import socket
+import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 REPO = Path(__file__).resolve().parents[1]
 DATOS = REPO / "datos"
 EVID = REPO / "evidencia"
 CTRL = DATOS / "control.json"
 PUERTO = 8765
+
+
+def _token():
+    """Token de acceso. Env MATRIZ_TOKEN o datos/ui_token.txt (se crea solo)."""
+    tok = (os.environ.get("MATRIZ_TOKEN") or "").strip()
+    if tok:
+        return tok
+    p = DATOS / "ui_token.txt"
+    try:
+        t = p.read_text(encoding="utf-8").strip()
+        if t:
+            return t
+    except OSError:
+        pass
+    DATOS.mkdir(exist_ok=True)
+    t = secrets.token_hex(4)
+    p.write_text(t, encoding="utf-8")
+    return t
+
+
+TOKEN = _token()
+
+
+def ip_red():
+    """IP de esta maquina en la red local (la que se abre desde el celular)."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except OSError:
+        return "127.0.0.1"
+
+
+def matar():
+    """Mata el arbol del agente (autonomo/loop/supervisor). NO mata el panel."""
+    ps = (
+        "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
+        "Where-Object { $_.CommandLine -match 'autonomo\\.py|loop\\.py|supervisor' "
+        "-and $_.CommandLine -notmatch 'ui\\.py' } | "
+        "ForEach-Object { taskkill /PID $_.ProcessId /T /F }"
+    )
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                           capture_output=True, text=True, timeout=30)
+        return ((r.stdout or "") + (r.stderr or "")).strip()[-400:]
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"error al matar: {exc}"
 
 
 def ultima_captura():
@@ -115,16 +173,20 @@ button.stop{color:var(--bad);border-color:#4a2020}
 </main>
 <footer><button onclick="ctl('pausar')">PAUSAR</button>
 <button onclick="ctl('reanudar')">REANUDAR</button>
-<button class="stop" onclick="ctl('detener')">DETENER</button></footer>
+<button class="stop" onclick="ctl('detener')">DETENER</button>
+<button class="stop" onclick="matar()">MATAR</button></footer>
 <script>
 const ETAPAS=["entorno","pin","estado","buscar","extraer","volver","pagina","reconectar","registrar","cierre"];
-async function ctl(a){await fetch('/api/control',{method:'POST',
+const K='__TOKEN__';
+async function ctl(a){await fetch('/api/control?k='+K,{method:'POST',
 headers:{'Content-Type':'application/json'},body:JSON.stringify({accion:a})});}
+async function matar(){if(!confirm('Matar el agente ahora? (no se puede deshacer)'))return;
+await fetch('/api/matar?k='+K,{method:'POST'});}
 function cls(r){if(!r)return'';if(/ok|cuenta_matriz|formulario|ficha/.test(r))return'ok';
 if(/sin_coincidencia|desconocido|fin_libro/.test(r))return'warn';return'bad';}
 async function tick(){
 try{
-const s=await fetch('/api/estado').then(r=>r.json());
+const s=await fetch('/api/estado?k='+K).then(r=>r.json());
 const u=s.ultimo||{},cur=u.etapa||'';
 document.getElementById('etapas').innerHTML=ETAPAS.map(e=>
 `<div class="etapa ${e===cur?'on':''}"><div class="pip"></div><span>${e}</span>`+
@@ -133,7 +195,7 @@ document.getElementById('punto').textContent=cur?
 `${cur} · ${u.resultado||''} · ${u.accion||''}`:'sin actividad';
 document.getElementById('control').textContent='control: '+(s.control||{}).accion;
 if(s.captura){const img=document.getElementById('cap');
-const url='/img?t='+s.captura_ts;if(img.dataset.u!==url){img.dataset.u=url;img.src=url;}
+const url='/img?k='+K+'&t='+s.captura_ts;if(img.dataset.u!==url){img.dataset.u=url;img.src=url;}
 document.getElementById('capmeta').textContent=s.captura;}
 document.getElementById('ledger').innerHTML='<tr><td class="k">id</td><td class="k">estado</td>'+
 '<td class="k">filas</td></tr>'+(s.ledger||[]).map(r=>
@@ -159,9 +221,16 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(datos)
 
+    def _autorizado(self):
+        q = parse_qs(urlparse(self.path).query)
+        return q.get("k", [""])[0] == TOKEN or self.headers.get("X-Token") == TOKEN
+
     def do_GET(self):
-        if self.path == "/":
-            return self._enviar(200, HTML, "text/html; charset=utf-8")
+        if not self._autorizado():
+            return self._enviar(403, b"no autorizado", "text/plain")
+        if urlparse(self.path).path == "/":
+            return self._enviar(200, HTML.replace("__TOKEN__", TOKEN),
+                                "text/html; charset=utf-8")
         if self.path.startswith("/api/estado"):
             return self._enviar(200, json.dumps(estado(), ensure_ascii=False))
         if self.path.startswith("/img"):
@@ -172,6 +241,12 @@ class Handler(BaseHTTPRequestHandler):
         return self._enviar(404, b"no existe", "text/plain")
 
     def do_POST(self):
+        if not self._autorizado():
+            return self._enviar(403, b"no autorizado", "text/plain")
+        if self.path.startswith("/api/matar"):
+            DATOS.mkdir(exist_ok=True)
+            CTRL.write_text(json.dumps({"accion": "detener"}), encoding="utf-8")
+            return self._enviar(200, json.dumps({"matar": matar()}))
         if not self.path.startswith("/api/control"):
             return self._enviar(404, b"no existe", "text/plain")
         n = int(self.headers.get("Content-Length") or 0)
@@ -189,8 +264,9 @@ def main(argv):
     puerto = PUERTO
     if "--puerto" in argv:
         puerto = int(argv[argv.index("--puerto") + 1])
-    srv = ThreadingHTTPServer(("127.0.0.1", puerto), Handler)
-    print(f"panel en http://127.0.0.1:{puerto}")
+    srv = ThreadingHTTPServer(("0.0.0.0", puerto), Handler)
+    print(f"panel local:   http://127.0.0.1:{puerto}/?k={TOKEN}")
+    print(f"panel celular: http://{ip_red()}:{puerto}/?k={TOKEN}")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
