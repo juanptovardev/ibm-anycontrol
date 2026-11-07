@@ -1,89 +1,103 @@
-# matriz-ibm-agent
+# IBM AnyControl (v1.0)
 
-Agente que, por **MCP de AnyDesk**, opera el emulador IBM 5250 de un PC de
-oficina como lo haría una persona: busca la dirección en la cuenta matriz, lee
-el listado de suscriptores y pega las filas en la hoja de Google Sheets.
+Agente autonomo que opera un terminal IBM 5250 remoto (via AnyDesk) para extraer
+suscriptores de cuentas matriz y pegarlos en Google Sheets. Repo interno de empresa.
 
-- Runtime: Hermes (perfil `matriz-ops`) + scripts Python locales por MCP stdio.
-- Transporte: `dev/mcp-anydesk` (fork propio) v3.7.0 — teclas especiales, clic
-  con coordenadas, captura 1:1 del viewport.
-- Lectura: Tesseract local (rápido, determinista) + Jev `jev-1.13-free` como
-  segunda opinión (no ve imágenes; solo texto).
+- Servidor MCP de control remoto: https://github.com/juanptovardev/mcp-anydesk (tag v1.1)
+- Panel de control en red + token, con botones PAUSAR / DETENER / MATAR.
+- Supervisor que relanza, reconecta y reanuda solo. 394 tests.
 
-Estado actual: **E0** (humano valida cada paso). El ciclo de lectura y la macro
-de búsqueda están medidos en vivo; falta el pegado en la hoja (batch T-IBM-03).
+## Que hace
 
----
+1. Entra al formulario CONSULTA EDIFICIO-CUENTA MATRIZ (con re-login automatico).
+2. Escribe la direccion en partes (Calle / No.Casa), prellena BOG/TVC, dispara F10.
+3. Lee la ficha del edificio desde el portapapeles remoto (sin OCR).
+4. Entra al listado de unidades (Shift+F4) y por cada pagina:
+   selecciona el bloque (7 abajo + Shift+clic), Ctrl+C, cambia a Chrome por el
+   icono de la taskbar, Ctrl+Shift+V, desplaza el cursor y vuelve al 5250.
+5. Avanza pagina con AvPag leyendo el contador NN/NNN, detecta fin de archivo.
+6. Deja todo en el ledger (tabla, una fila por direccion, reanudable por pagina).
 
 ## Requisitos
 
-| Pieza | Dónde | Nota |
-|-------|-------|------|
-| AnyDesk abierto y conectado al PC de oficina | PC del operador | La ventana `Oficina - AnyDesk` debe existir |
-| Emulador IBM 5250 al frente | PC remoto | Requisito del operador (SOLO-HUMANO) |
-| Chrome con `MATRICES - Google Sheets` | PC remoto | Pestaña abierta antes del ciclo |
-| Python con `mss`/PIL/Tesseract | `dev/mcp-anydesk\.venv\Scripts\python.exe` | El Python global **no** sirve |
-| Tesseract | `C:\Program Files\Tesseract-OCR` | 5.4.0 |
-| `dev/mcp-anydesk` | repo hermano | ≥3.7.0 (necesita `click_point`, `find_viewport`) |
+- Windows 10/11 + Python 3.11+ con: mss, pillow, pytesseract, pywin32, opencv-python.
+- Tesseract-OCR 5.x en PATH.
+- AnyDesk (licencia gratuita sirve, corta cada pocos minutos: el agente reconecta solo).
+- Chrome en el escritorio remoto con la hoja destino abierta (pestaña "temp borrador").
+- `dev/mcp-anydesk` instalado en un venv (es el servidor MCP que el agente llama).
 
-## Comandos
+## Arranque
 
-```powershell
-$PY   = "C:\Users\juanp_8h8f07l\dev\mcp-anydesk\.venv\Scripts\python.exe"
-$REPO = "C:\Users\juanp_8h8f07l\dev\matriz-ibm-agent"
-
-# hwnd actual de la ventana AnyDesk (cambia por sesión)
-(Get-Process anydesk | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1).MainWindowHandle
-
-& $PY "$REPO\tools\estado.py"   <hwnd>     # ¿qué pantalla es? (JSON)
-& $PY "$REPO\tools\rows.py"     <hwnd>     # medir filas del formulario (--draw)
-& $PY "$REPO\tools\geo.py"      <hwnd>     # geometría + viewport
-& $PY "$REPO\tools\flow.py"     <hwnd>     # macro 5250 (clic, flechas, +, F10, Shift+F4)
-& $PY "$REPO\tools\paginar.py"  <hwnd> 10  # recorrer el libro con AvPág
-& $PY "$REPO\tools\loop.py"     <hwnd>     # ciclo por dirección (lee datos/datos.csv)
-& $PY -m unittest discover -s "$REPO\tests" -v         # 105 tests (stdlib, sin pytest)
+```
+arranca.bat            # visor + supervisor (perfil psicopata, teclas rapidas)
+arranca.bat humano     # otro perfil: sigiloso | humano | rapido | psicopata
 ```
 
-## Contratos congelados
+Manual:
 
-- `datos/datos.csv` — entrada:
-  `id,direccion_parte1,direccion_parte2,comuna,cuenta_matriz_esperada,nota`
-- `datos/ledger.csv` — salida append-only:
-  `id,direccion_parte1,direccion_parte2,comuna,cuenta_matriz_esperada,estado,paginas_vistas,filas_copiadas,hora_inicio,hora_fin,evidencia,notas,reintentos`
-  (la lectura toma la última fila por `id`)
+```
+python tools\ui.py                                            # panel en :8765
+python tools\supervisor.py --perfil=psicopata --teclas=rapido --max-vueltas=20 --horas=30 --tope-vuelta=21600
+```
 
-## Mapa
+## Panel desde el celular
 
-| Ruta | Qué es |
-|------|--------|
-| `tools/estado.py` | Captura → OCR → reglas → (Jev) → estado de pantalla |
-| `tools/tabla.py` | Parser del listado + normalización OCR por campo |
-| `tools/paginar.py` | AvPág con paradas |
-| `tools/loop.py` | Ciclo por dirección con blindaje B1..B7 + ledger |
-| `tools/flow.py` | Macro 5250 determinista |
-| `tools/rows.py` | Medición de filas por píxeles (nunca cachear coords) |
-| `tools/native_shot.py` | Captura 1:1 (PrintWindow) |
-| `tools/_mcp.py` | Transporte MCP (env-overridable, exit codes) |
-| `tools/_jev.py` | Cliente Jev (curl, clave en archivo temporal) |
-| `tools/_experimentos/` | Scripts de una vez (no tocar en producción) |
-| `docs/engineering/` | Guía ORCA, batches, bitácora, TRACE_FUNCIONES |
-| `docs/adr/` | Decisiones fechadas |
-| `ESCALAMIENTO.md` | Blindaje, puertas E0–E3, pendientes honestos |
+`http://<IP-de-la-PC>:8765/?k=<token>` (token en `datos/ui_token.txt`, se genera solo).
+Muestra pantalla remota, semaforo por etapa, ledger y traza. FireWall de Windows:
+permitir entrada TCP 8765 en perfil privado.
 
-## Blindaje (resumen)
+## Como parar
 
-1. No se teclea a ciegas: la pantalla debe estar en `formulario`.
-2. No se pulsa F10 sin verificar (por píxeles) que el texto quedó en Calle y no
-   en Nombre.
-3. Estado inesperado → el item se aborta (distinguir "no existe" de "falló").
-4. El foco lo vigila el server: si una ventana local roba el foco, la llamada
-   MCP falla y el item se marca error.
-5. Máximo 1 reintento por item.
-6. Todo item deja rastro (ledger + captura).
-7. Idempotencia: lo `ok` no se reprocesa.
+1. Panel: PAUSAR (se congela entre bloques) o DETENER (corta limpio).
+2. Panel: MATAR (taskkill del arbol del agente).
+3. Fisico: apagar el PC / quitar la red. El ledger reanuda sin duplicar.
 
-## Límites del emulador (medidos)
+## Contratos de datos (van en el repo, uso interno)
 
-- `delete` no borra · `home` salta al primer campo · el avance de campo es el
-  `+` del **bloque numérico** · `F4` suelto **cierra** el emulador (siempre con
-  `shift`).
+| Archivo               | Formato                                   | Uso |
+| --------------------- | ----------------------------------------- | --- |
+| `datos/direcciones.csv` | BOM + CRLF + `;` cabecera `parte1;parte2;ficha` | entrada, ids posicionales D01.. |
+| `datos/ledger.csv`      | BOM + CRLF + `;` 13 campos, upsert por id | estado por direccion, reanudacion |
+| `config/jev.json`       | `{url, model, key}`                       | clave y endpoint de Jev |
+| `%USERPROFILE%\.matriz\creds.json` | `{usuario, clave}`             | login del 5250 (fuera del repo) |
+| `datos/control.json`    | `{"accion": pausar\|detener\|libre}`      | runtime, lo escribe el panel |
+
+El campo `ficha` es multilinea entre comillas y lleva `;` dentro: parsear SIEMPRE
+con el modulo `csv`, nunca con split.
+
+## Estructura de tools/
+
+- Orquestacion: `loop.py`, `orquesta.py`, `autonomo.py`, `supervisor.py`
+- Flujo: `matriz_buscar.py`, `matriz_ficha.py`, `matriz_extraer.py`, `pagina.py`
+- E/S remota: `cp.py`, `ciclo.py`, `click_sel.py`, `ventana.py`, `estado.py`,
+  `preflight_auto.py`, `enfocar.py`, `native_shot.py`, `_mcp.py`, `_jev.py`
+- Resiliencia: `vigia.py`, `login.py`, `credenciales.py`, `traza.py`, `perfil.py`
+- Datos: `separar.py`, `anexar_direcciones.py`, `regenerar_direcciones.py`,
+  `reset_ledger.py`, `registrar_pegado.py`
+- Panel: `ui.py` + `arranca.bat`
+
+## Perfiles de velocidad
+
+| Perfil    | Techo s/direccion | Nota |
+| --------- | ----------------- | ---- |
+| sigiloso  | 27,5              | 1,5x mas lento que el operador humano |
+| humano    | 18,3              | ritmo de referencia |
+| rapido    | 12,2              | |
+| psicopata | 9,15              | corre al maximo real del motor |
+
+El techo se rellena con pausas naturales (4 puntos, con jitter). Si el motor va
+mas lento que el techo no se anade pausa.
+
+## Tests
+
+```
+python -m unittest discover -s tests    # 394 tests, sin pytest
+```
+
+## Notas de operacion
+
+- El hwnd de AnyDesk y del viewport rotan en cada reconexion: nunca cachearlos.
+- El cambio de ventana 5250 <-> Chrome se hace por icono de taskbar (Alt+Tab no llega).
+- Excel abierto bloquea direcciones.csv: las fichas van a `datos/fichas_pendientes.csv`.
+- `no_encontrado` y `pegado_dudoso` son estados terminales: no se reintentan.
+- Una direccion con 3 fallos consecutivos se congela y no se reintenta.

@@ -10,11 +10,29 @@ import tempfile
 from pathlib import Path
 
 AUTH = Path(os.path.expandvars(r"%USERPROFILE%")) / ".local" / "share" / "opencode" / "auth.json"
+CONFIG = Path(__file__).resolve().parent.parent / "config" / "jev.json"
 URL = "https://opencode.ai/inference/systemone/v1/systemone"
 MODEL = "jev-1.13-free"
 
+# config/jev.json del repo (interno de empresa) manda sobre los defaults.
+try:
+    _cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
+    URL = _cfg.get("url") or URL
+    MODEL = _cfg.get("model") or MODEL
+except (OSError, ValueError):
+    pass
+
 
 def _key() -> str:
+    # El repo lleva config/jev.json con la clave del despliegue (repo interno
+    # de empresa, por decision del operador). auth.json del CLI queda como
+    # fallback en la maquina de desarrollo.
+    try:
+        data = json.loads(CONFIG.read_text(encoding="utf-8"))
+        if data.get("key"):
+            return data["key"]
+    except (OSError, ValueError):
+        pass
     try:
         data = json.loads(AUTH.read_text(encoding="utf-8"))
     except (OSError, ValueError):

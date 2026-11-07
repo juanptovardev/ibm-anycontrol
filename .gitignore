@@ -10,12 +10,12 @@ datos/ui.err
 datos/ui.log
 datos/control.json
 datos/*.err
+# Los contratos de datos (direcciones.csv, ledger.csv) SI van en el repo:
+# es un repo interno de empresa, por decision del operador (v1).
 datos/fichas_pendientes.csv
-datos/direcciones.csv
 datos/direcciones_orden.csv
 datos/direcciones_nuevas.csv
 datos/direcciones.tmp
-datos/ledger.csv
 datos/*backup*.csv
 datos/prueba_*.csv
 datos/supervisor.json

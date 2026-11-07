@@ -1,0 +1,18 @@
+﻿id;direccion_parte1;direccion_parte2;comuna;cuenta_matriz_esperada;estado;paginas_vistas;filas_copiadas;hora_inicio;hora_fin;evidencia;notas;reintentos
+D01;CR 12B;140-55;BOG;;ok;2;26;12:36:24;12:36:53;C:\Users\juanp_8h8f07l\dev\matriz-ibm-agent-piloto100\evidencia\native-20261107-123648-D01-fin.png;"2 bloques, 26 filas; psicopata 29.0/9.2s";0
+D02;CL 70;96-34;BOG;;error;5;75;12:36:54;12:37:34;;halt: volver: no se pudo volver al 5250 (ni por icono ni Alt+Tab);0
+D03;CL 145A;12A-45;BOG;;error;3;45;12:37:45;12:38:19;;halt: ctrl_c: AnyDesk no esta en primer plano y no se pudo enfocar;0
+D04;CL 152A;13-21;BOG;;ok;3;37;12:38:30;12:39:08;C:\Users\juanp_8h8f07l\dev\matriz-ibm-agent-piloto100\evidencia\native-20261107-123903-D04-fin.png;"3 bloques, 37 filas; psicopata 38.9/9.2s";0
+D05;CL 151;12B-46;BOG;;ok;3;40;12:39:09;12:39:46;C:\Users\juanp_8h8f07l\dev\matriz-ibm-agent-piloto100\evidencia\native-20261107-123940-D05-fin.png;"3 bloques, 40 filas; psicopata 36.4/9.2s";0
+D06;CL 135C;11-33;BOG;;ok;4;54;12:39:47;12:40:34;C:\Users\juanp_8h8f07l\dev\matriz-ibm-agent-piloto100\evidencia\native-20261107-124027-D06-fin.png;"4 bloques, 54 filas; psicopata 47.5/9.2s";0
+D07;CL 143;9-80;BOG;;ok;2;22;12:40:35;12:41:05;C:\Users\juanp_8h8f07l\dev\matriz-ibm-agent-piloto100\evidencia\native-20261107-124059-D07-fin.png;"2 bloques, 22 filas; psicopata 29.9/9.2s";0
+D08;CR 10A;138-90;BOG;;error;1;15;12:41:06;12:41:21;;halt: volver: no se llego al listado (estado desconectado);0
+D09;CL 152A;13-58;BOG;;ok;14;203;12:41:22;12:43:18;C:\Users\juanp_8h8f07l\dev\matriz-ibm-agent-piloto100\evidencia\native-20261107-124312-D09-fin.png;"14 bloques, 203 filas; psicopata 116.4/9.2s";0
+D10;CR 12C;152-64;BOG;;ok;4;45;12:43:19;12:43:55;C:\Users\juanp_8h8f07l\dev\matriz-ibm-agent-piloto100\evidencia\native-20261107-124350-D10-fin.png;"3 bloques, 45 filas; 1 paginas vacias saltadas; psicopata 35.9/9.2s";0
+D11;CL 143;9-55;BOG;;error;8;120;12:43:55;12:44:55;;halt: volver: no se pudo volver al 5250 (ni por icono ni Alt+Tab);0
+D12;CR 14A;151A-90;BOG;;ok;16;225;12:45:04;12:47:08;C:\Users\juanp_8h8f07l\dev\matriz-ibm-agent-piloto100\evidencia\native-20261107-124701-D12-fin.png;"15 bloques, 225 filas; 1 paginas vacias saltadas; psicopata 123.5/9.2s";0
+D13;CL 142;11-40;BOG;;ok;12;172;12:47:09;12:48:43;C:\Users\juanp_8h8f07l\dev\matriz-ibm-agent-piloto100\evidencia\native-20261107-124838-D13-fin.png;"12 bloques, 172 filas; psicopata 93.8/9.2s";0
+D14;CL 134;10A-40;BOG;;ok;3;31;12:48:43;12:49:16;C:\Users\juanp_8h8f07l\dev\matriz-ibm-agent-piloto100\evidencia\native-20261107-124911-D14-fin.png;"3 bloques, 31 filas; psicopata 32.4/9.2s";0
+D15;CL 142;12B-51;BOG;;ok;10;147;12:49:17;12:50:47;C:\Users\juanp_8h8f07l\dev\matriz-ibm-agent-piloto100\evidencia\native-20261107-125042-D15-fin.png;"10 bloques, 147 filas; psicopata 90.6/9.2s";0
+D16;CL 145A;12A-62;BOG;;ok;2;22;12:50:48;12:51:15;C:\Users\juanp_8h8f07l\dev\matriz-ibm-agent-piloto100\evidencia\native-20261107-125110-D16-fin.png;"2 bloques, 22 filas; psicopata 27.4/9.2s";0
+D17;CL 151;11-93;BOG;;error;0;0;12:51:16;12:51:31;;halt: G2 no se pudo llegar a la hoja: no se pega;0
