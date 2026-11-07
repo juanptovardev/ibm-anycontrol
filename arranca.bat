@@ -1,7 +1,14 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-set "PY=C:\Users\juanp_8h8f07l\dev\mcp-anydesk\.venv\Scripts\python.exe"
+set "PY=%~dp0..\mcp-anydesk\.venv\Scripts\python.exe"
+if not exist "%PY%" (
+  echo ERROR: falta el venv de mcp-anydesk:
+  echo        %PY%
+  echo Instala primero el repositorio hermano dev\mcp-anydesk.
+  pause
+  exit /b 2
+)
 set "PERFIL=%~1"
 if "%PERFIL%"=="" set "PERFIL=psicopata"
 

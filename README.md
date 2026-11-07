@@ -1,11 +1,16 @@
-# IBM AnyControl (v1.0)
+# IBM AnyControl v1
 
-Agente autonomo que opera un terminal IBM 5250 remoto (via AnyDesk) para extraer
-suscriptores de cuentas matriz y pegarlos en Google Sheets. Repo interno de empresa.
+Agente autonomo que opera un terminal IBM 5250 remoto via AnyDesk, extrae
+suscriptores de cuentas matriz y pega los resultados en Google Sheets.
 
-- Servidor MCP de control remoto: https://github.com/juanptovardev/mcp-anydesk (tag v1.1)
-- Panel de control en red + token, con botones PAUSAR / DETENER / MATAR.
-- Supervisor que relanza, reconecta y reanuda solo. 394 tests.
+**Repositorio interno privado.** Esta version contiene contratos y datos operativos
+de la empresa. No hacerlo publico ni activar port-forwarding del panel.
+
+- Agente: https://github.com/juanptovardev/ibm-anycontrol (tag v1.0)
+- MCP: https://github.com/juanptovardev/mcp-anydesk (tag v1.1)
+- Panel en red con token: PAUSAR / DETENER / MATAR.
+- Supervisor: reconecta, reloguea, reanuda y congela fallos repetidos.
+- Estado de referencia: 394 tests verdes.
 
 ## Que hace
 
@@ -18,20 +23,95 @@ suscriptores de cuentas matriz y pegarlos en Google Sheets. Repo interno de empr
 5. Avanza pagina con AvPag leyendo el contador NN/NNN, detecta fin de archivo.
 6. Deja todo en el ledger (tabla, una fila por direccion, reanudable por pagina).
 
-## Requisitos
+## Instalacion en otra laptop (para la IA instaladora)
+
+La persona de la laptop no necesita programar. Debe abrir OpenCode y pegar el
+prompt de la seccion siguiente. La estructura de carpetas debe quedar asi:
+
+```text
+%USERPROFILE%\dev\mcp-anydesk
+%USERPROFILE%\dev\ibm-anycontrol
+```
+
+### Requisitos
 
 - Windows 10/11 + Python 3.11+ con: mss, pillow, pytesseract, pywin32, opencv-python.
 - Tesseract-OCR 5.x en PATH.
 - AnyDesk (licencia gratuita sirve, corta cada pocos minutos: el agente reconecta solo).
 - Chrome en el escritorio remoto con la hoja destino abierta (pestaña "temp borrador").
-- `dev/mcp-anydesk` instalado en un venv (es el servidor MCP que el agente llama).
+- Git y acceso al repositorio privado.
+- `dev/mcp-anydesk` instalado en un venv: es el servidor MCP que el agente llama.
+
+### Prompt para OpenCode
+
+Pegar este texto como primera instruccion en la laptop nueva:
+
+```text
+Configura IBM AnyControl v1 en esta laptop siguiendo README.md, sin inventar rutas.
+
+1. Verifica Windows, Python 3.11+, Git y Tesseract-OCR 5.x en PATH.
+2. Verifica que estos repos esten lado a lado:
+   %USERPROFILE%\dev\mcp-anydesk
+   %USERPROFILE%\dev\ibm-anycontrol
+   Si faltan, clona los repos privados de juanptovardev usando gh auth login.
+3. En mcp-anydesk crea .venv e instala el proyecto con:
+   .venv\Scripts\python.exe -m pip install -e .
+4. Verifica que exista:
+   %USERPROFILE%\.matriz\creds.json
+   con las credenciales del 5250 proporcionadas por el operador. No muestres ni
+   imprimas la clave. No la guardes en el repositorio.
+5. No cambies config/jev.json, datos/direcciones.csv ni datos/ledger.csv.
+   Son contratos internos preparados para esta instalacion.
+6. Ejecuta desde ibm-anycontrol, usando el Python del venv de mcp-anydesk:
+   python -m unittest discover -s tests
+   Deben pasar los tests esperados para el commit instalado.
+7. Verifica que AnyDesk este abierto y conectado al PC remoto, que Chrome remoto
+   tenga la hoja LIMPIEZA RR en la pestaña temp borrador y que Excel este cerrado.
+8. Ejecuta primero solo el panel:
+   python tools\ui.py
+   Informa la IP LAN y el token. No lances el supervisor hasta que el operador
+   confirme que ve el panel desde su celular.
+9. Cuando el operador confirme, ejecuta arranca.bat.
+10. No edites el flujo, no cambies el CSV, no resetees el ledger y no ejecutes
+    una prueba nueva sin confirmacion explicita del operador.
+
+Al terminar reporta solamente: precondiciones, tests, URL del panel, estado de
+AnyDesk y si arranca.bat quedo listo.
+```
+
+### Credenciales del 5250
+
+No estan en el repo. Crear este archivo localmente, con la clave entregada por
+el operador:
+
+```text
+%USERPROFILE%\.matriz\creds.json
+```
+
+Formato:
+
+```json
+{"usuario":"USUARIO_5250","clave":"CLAVE_5250"}
+```
+
+Tambien se aceptan las variables `MATRIZ_5250_USUARIO` y
+`MATRIZ_5250_CLAVE`. Nunca imprimir la clave ni pegarla en un log.
+
+### Configuracion de Jev
+
+`config/jev.json` ya contiene el endpoint, modelo y clave del repositorio
+privado. Si la clave se rota, editarlo solo en el repositorio privado y volver a
+probar; si el repositorio deja de ser privado, rotar la clave inmediatamente.
 
 ## Arranque
 
-```
+```text
 arranca.bat            # visor + supervisor (perfil psicopata, teclas rapidas)
-arranca.bat humano     # otro perfil: sigiloso | humano | rapido | psicopata
+arranca.bat humano     # sigiloso | humano | rapido | psicopata
 ```
+
+`arranca.bat` calcula la ruta del venv relativa al repositorio hermano; no
+contiene una ruta de usuario fija.
 
 Manual:
 
@@ -45,6 +125,13 @@ python tools\supervisor.py --perfil=psicopata --teclas=rapido --max-vueltas=20 -
 `http://<IP-de-la-PC>:8765/?k=<token>` (token en `datos/ui_token.txt`, se genera solo).
 Muestra pantalla remota, semaforo por etapa, ledger y traza. FireWall de Windows:
 permitir entrada TCP 8765 en perfil privado.
+
+El telefono debe estar en la misma red WiFi. Regla de firewall, una vez como
+Administrador:
+
+```powershell
+netsh advfirewall firewall add rule name="Matriz UI 8765" dir=in action=allow protocol=TCP localport=8765 profile=private
+```
 
 ## Como parar
 
@@ -91,7 +178,7 @@ mas lento que el techo no se anade pausa.
 ## Tests
 
 ```
-python -m unittest discover -s tests    # 394 tests, sin pytest
+python -m unittest discover -s tests    # 394 tests de referencia, sin pytest
 ```
 
 ## Notas de operacion
@@ -101,3 +188,6 @@ python -m unittest discover -s tests    # 394 tests, sin pytest
 - Excel abierto bloquea direcciones.csv: las fichas van a `datos/fichas_pendientes.csv`.
 - `no_encontrado` y `pegado_dudoso` son estados terminales: no se reintentan.
 - Una direccion con 3 fallos consecutivos se congela y no se reintenta.
+- El agente controla el cursor y el foco de la laptop. No usar esa laptop mientras
+  corre; detener desde el panel del celular. Manana conviene moverlo a un PC
+  dedicado.

@@ -11,9 +11,9 @@ from contextlib import asynccontextmanager
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-REPO = os.environ.get(
-    "MCP_ANYDESK_REPO", r"C:\Users\juanp_8h8f07l\dev\mcp-anydesk"
-)
+_AGENT_REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+_SIBLING_MCP = os.path.abspath(os.path.join(_AGENT_REPO, "..", "mcp-anydesk"))
+REPO = os.environ.get("MCP_ANYDESK_REPO", _SIBLING_MCP)
 PY = os.path.join(REPO, ".venv", "Scripts", "python.exe")
 
 
