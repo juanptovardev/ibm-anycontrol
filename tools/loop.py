@@ -63,6 +63,9 @@ CAMPOS_LEDGER = ["id", "direccion_parte1", "direccion_parte2", "comuna",
                   "filas_copiadas", "hora_inicio", "hora_fin", "evidencia",
                   "notas", "reintentos"]
 REINTENTOS = 1
+# Reintentos extra SOLO ante un corte transitorio de AnyDesk (pausa en vez de
+# morir): se espera a que vuelva y se reintenta la misma direccion reanudando.
+MAX_RECUPERACION = 2
 # Indices de fila del formulario CONSULTA EDIFICIO (rows.detect devuelve 8).
 # El bloque del operador son 15 filas (7 abajo + 14 de alto).
 FILAS_POR_BLOQUE = 15
@@ -321,6 +324,24 @@ async def login_si_hace_falta(s, hwnd: int, img=None) -> bool:
     ok = await login.entrar(s, hwnd, cred["usuario"], cred["clave"])
     print(f"  [login] entrada {'ok' if ok else 'fallida'}", flush=True)
     return ok
+
+
+async def _recupera(s, hwnd: int, espera: float = 5.0, intentos: int = 12) -> bool:
+    """Espera a que AnyDesk y el 5250 vuelvan tras un corte transitorio.
+
+    La licencia gratuita corta cada pocos minutos. En vez de dar la direccion
+    por error y pasar a la siguiente (que tambien fallara), se pulsa Repetir y
+    se re-loguea sondeando hasta que la conexion este viva. Devuelve True si
+    recupero. Peor caso ~1 min (espera=5 / intentos=12).
+    """
+    for _ in range(intentos):
+        if hay_dialogo(hwnd) or not anydesk_vivo(hwnd):
+            reconecta_si_hace_falta(hwnd)
+        if anydesk_vivo(hwnd) and not hay_dialogo(hwnd):
+            await login_si_hace_falta(s, hwnd)
+            return True
+        await asyncio.sleep(espera)
+    return anydesk_vivo(hwnd) and not hay_dialogo(hwnd)
 
 
 # Pantallas del 5250 (o avisos suyos). "no_ibm" significa navegador/hoja.
@@ -817,6 +838,19 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
             return res
 
 
+def _es_corte(res: dict) -> bool:
+    """True si la direccion murio por un corte transitorio de AnyDesk (no por
+    datos): se puede recuperar y reintentar con reanudacion por pagina."""
+    if res.get("estado") not in ("error", "pegando"):
+        return False
+    notas = (res.get("notas") or "").lower()
+    for marca in ("b0 sin conexion", "g2 no se pudo llegar", "b3 estado",
+                  "no esta en primer plano", "desconectado"):
+        if marca in notas:
+            return True
+    return False
+
+
 def reanuda_desde(hechos: dict, fila: dict) -> int:
     """Paginas ya pegadas de ESTA direccion; 0 si el ledger es de otra.
 
@@ -873,6 +907,19 @@ async def main(hwnd: int, solo_id: str | None, dry: bool = False,
             # Reanudacion validada por direccion (el id es posicional).
             desde = reanuda_desde(ledger_en_curso(), f)
             res = await procesa(f, hwnd, s, dry, desde_pagina=desde, solo_ficha=solo_ficha)
+            # Pausa en vez de morir: si la direccion cayo por un corte
+            # transitorio de AnyDesk (licencia), se espera a que vuelva, se
+            # re-loguea y se reintenta la MISMA direccion reanudando por pagina
+            # (el ledger ya tiene la fila 'pegando'). Acotado y no repite si el
+            # fallo es de datos (no_encontrado, B2, etc.).
+            for _rec in range(MAX_RECUPERACION):
+                if not _es_corte(res):
+                    break
+                if not await _recupera(s, hwnd):
+                    break
+                desde = reanuda_desde(ledger_en_curso(), f)
+                res = await procesa(f, hwnd, s, dry, desde_pagina=desde,
+                                    solo_ficha=solo_ficha)
             res["hora_fin"] = time.strftime("%H:%M:%S")
             if not dry:
                 ledger_escribe(res)
