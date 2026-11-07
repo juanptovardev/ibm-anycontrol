@@ -1,0 +1,149 @@
+"""Ciclo unico del 5250: 7 abajo -> Shift+Clic -> copiar -> Alt+Tab -> pegar
+-> desplazar. Termina y deja el resultado para que lo confirme el operador.
+
+Orden (validado por el operador, sin inventar pasos):
+  1. 7 x Abajo (sin Shift)                     -> cursor en la primera fila
+  2. Shift + CLIC en la ultima celda Suscript  -> selecciona el bloque
+  3. Ctrl+C                                    -> copia al portapapeles remoto
+  4. Alt+Tab                                   -> pasa a la hoja
+  5. Ctrl+Shift+V                              -> pega sin formato
+  6. Ctrl+Abajo + Abajo                        -> deja la celda lista para el siguiente
+
+Antes de seleccionar se comprueba si la pagina tiene suscriptores: cuando la
+columna Suscript viene vacia NO se copia ni se pega nada y se devuelve
+"vacia" para que el bucle avance de pagina (orden del operador, 27/10).
+
+No verifica el marco amarillo: esa medicion dio falsos negativos con el clic
+que el operador valido. Las puertas que si quedan: G0 (pantalla = listado),
+G2 (tras Alt+Tab la pantalla NO es IBM) y G3 (el pegado se ve en la hoja).
+
+Uso:
+    python tools/ciclo.py <hwnd>
+    python tools/ciclo.py <hwnd> --dry     # solo selecciona y mide, sin copiar
+"""
+import asyncio
+import sys
+
+import cp
+import native_shot
+import preflight_auto as pf
+import perfil
+from click_sel import pagina_vacia, target_celda_fallback
+from estado import ocr_completo
+
+# Captura limpia de la pagina en la que se esta trabajando. La usa el bucle
+# como referencia para saber si el AvPag ya se proceso (si la pantalla casi no
+# cambia, la pagina anterior se volveria a pegar: duplicado).
+ULTIMA_IMG = None
+
+# Filas REALES del ultimo bloque pegado (cp._copiar cuenta las lineas con
+# datos del portapapeles). Lo usa el bucle para el ledger: suponer 15 filas
+# por bloque inflaba la cifra, porque la ultima pagina casi nunca trae 15.
+ULTIMAS_FILAS = 0
+
+
+async def extrae(s, hwnd: int, dry: bool = False, bajar: bool = True,
+                 previo: dict | None = None) -> str:
+    """Extrae un bloque. Devuelve "ok" o "vacia".
+
+    bajar=False en paginas siguientes: el cursor del 5250 conserva su punto al
+    paginar, asi que repetir las 7 bajadas desalinea la seleccion (regla del
+    operador, 27/10).
+
+    `previo` es la captura ya leida que dejo `pagina.avanza` (imagen, texto y
+    palabras). Se reutiliza para no pagar otra captura ni otro OCR de la MISMA
+    pantalla.
+    """
+    global ULTIMA_IMG, ULTIMAS_FILAS
+    if bajar:
+        await pf.step(s, "bajar_inicio", "press_keys",
+                      {"keys": ["down"] * cp.BAJAR_INICIO,
+                       "key_delay_ms": perfil.key_delay_ms()})
+    else:
+        print("A0 pagina siguiente: sin 7 bajadas (el cursor ya esta en su punto)",
+              flush=True)
+    if previo:
+        img, texto, words = previo["img"], previo["texto"], previo["words"]
+        print("A0 reutilizo la captura de la pagina (sin OCR nuevo)", flush=True)
+        # La evidencia visual de la pagina se conserva aunque no se vuelva a
+        # capturar: sin esto el primer bloque de cada direccion se quedaria sin
+        # PNG y el operador no podria verificarlo.
+        native_shot.save(img, "ciclo-antes")
+    else:
+        img = pf.shot(hwnd, "ciclo-antes")
+        texto, words = ocr_completo(img)
+    ULTIMA_IMG = img
+    t = target_celda_fallback(img, words)
+    if not t and previo:
+        # La captura reutilizada pudo atrapar la pantalla a medio pintar: se
+        # recaptura y se reintenta. El previo es una optimisation, no la fuente
+        # de verdad: si no sirve, se vuelve a leer la pantalla.
+        print("A1 la captura reutilizada no sirvio: se recaptura", flush=True)
+        img = pf.shot(hwnd, "ciclo-antes")
+        texto, words = ocr_completo(img)
+        ULTIMA_IMG = img
+        t = target_celda_fallback(img, words)
+    if not t:
+        raise pf.Halt("A1 no se encontro la cabecera Suscript ni sus codigos")
+    print(f"A1 clic en x={t['x']} y={t['y']} (col {t['col_left']}..{t['col_right']}, "
+          f"ultima fila {t['fila_top']}, barra {t['barra']}, "
+          f"suscriptores {t['suscriptores']})", flush=True)
+    vacia, motivo = pagina_vacia(img, t, texto)
+    if vacia:
+        print(f"A1 pagina sin suscriptores ({motivo}): no se copia", flush=True)
+        ULTIMAS_FILAS = 0
+        return "vacia"
+    await pf.step(s, "shift_click", "click_point",
+                  {"x": t["x"], "y": t["y"], "shift": True})
+    # El servidor ya deja 150 ms de settle antes del clic (medido: sin eso el
+    # remoto recibia el clic SIN shift). 0.25 s basta para que el 5250 aplique
+    # la seleccion; antes se dormia 0.5 s.
+    await asyncio.sleep(0.25)
+    # Ni captura extra ni `sel_box`: medido que el marco amarillo da falsos
+    # negativos con el clic x=917 (el operador valido la seleccion a mano y el
+    # detector devolvia None), asi que no era una puerta sino un dato
+    # poco fiable que costaba 240 ms por pagina. La evidencia de lo pegado
+    # queda en cp-pre-paste / cp-post-paste.
+    if dry:
+        await pf.step(s, "limpiar", "press_keys", {"keys": ["escape"]})
+        print("DRY: seleccionada, sin copiar", flush=True)
+        return "ok"
+    filas = await cp._copiar(s)
+    await cp._pegar(s, hwnd)
+    await cp._posicionar(s, hwnd, filas)
+    ULTIMAS_FILAS = filas
+    return "ok"
+
+
+async def _run(hwnd: int, dry: bool) -> bool:
+    from _mcp import connect
+
+    async with connect() as s:
+        try:
+            await pf.step(s, "focus_click_off", "set_focus_click_mode", {"enabled": False})
+            await pf.step(s, "pin", "select_anydesk_window", {"hwnd": hwnd})
+            st = cp.clasificar(cp.captura(hwnd)[0], usar_jev=False)
+            print(f"G0 pantalla: estado={st['estado']} conf={st.get('confianza')}", flush=True)
+            if st["estado"] != "cuenta_matriz":
+                raise pf.Halt(f"G0 se esperaba el listado, hay {st['estado']}")
+            await extrae(s, hwnd, dry)
+        except pf.Halt as exc:
+            print(f"ABORTADO: {exc}", flush=True)
+            return False
+    return True
+
+
+def main(argv: list[str]) -> int:
+    from _mcp import need_hwnd
+
+    dry = "--dry" in argv
+    args = [a for a in argv if a != "--dry"]
+    hwnd = need_hwnd(args)
+    if not asyncio.run(_run(hwnd, dry)):
+        return 1
+    print("FIN DEL CICLO. Esperando confirmacion del operador.", flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

@@ -1,0 +1,4 @@
+id,direccion_parte1,direccion_parte2,comuna,cuenta_matriz_esperada,nota
+EJ-01,CALLE EJEMPLO,123,CENTRO,CM-EJ-001,
+EJ-02,AVENIDA EJEMPLO,456,NORTE,CM-EJ-002,
+EJ-03,PASAJE EJEMPLO,789,SUR,CM-EJ-003,

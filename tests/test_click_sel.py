@@ -1,0 +1,97 @@
+"""click_sel: eleccion de la celda objetivo (sin OCR ni input real)."""
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+
+import click_sel  # noqa: E402
+
+CAB = ("Suscript", 800, 100, 70, 14)
+BARRA = ("F3=Fin", 20, 630, 40, 12)
+
+
+def _fila(y, codigo=None):
+    words = [("CL", 244, y, 20, 12), ("175", 270, y, 30, 12),
+             ("BLACACIAS", 305, y, 90, 12), ("ADMIN", 420, y, 60, 12)]
+    if codigo:
+        words.append((codigo, 860, y, 60, 12))
+        words.append(("S", 930, y, 10, 12))
+    return words
+
+
+class TestTargetCelda(unittest.TestCase):
+    def test_sin_cabecera_no_adivina(self):
+        self.assertIsNone(click_sel.target_celda(_fila(120, "50867551")))
+
+    def test_cabecera_sin_datos(self):
+        self.assertIsNone(click_sel.target_celda([CAB]))
+
+    def test_apunta_al_borde_derecho_del_suscriptor(self):
+        words = [CAB] + _fila(120, "50867551") + _fila(140, "25420919")
+        t = click_sel.target_celda(words)
+        self.assertEqual(t["col_left"], 860)
+        self.assertEqual(t["col_right"], 920)
+        self.assertEqual(t["x"], 913)   # 920 - margen 7 (x validado en vivo)
+
+    def test_fila_objetivo_es_la_mas_baja_del_listado(self):
+        words = [CAB] + _fila(120, "50867551") + _fila(160) + [BARRA]
+        t = click_sel.target_celda(words)
+        self.assertEqual(t["y"], 166)
+
+    def test_la_barra_de_funcion_no_es_fila(self):
+        words = [CAB] + _fila(120, "50867551") + [BARRA]
+        t = click_sel.target_celda(words)
+        self.assertEqual(t["barra"], 630)
+        self.assertEqual(t["y"], 126)
+
+    def test_linea_de_comando_tampoco_es_fila(self):
+        words = [CAB] + _fila(120, "50867551") + [("MA_", 40, 640, 30, 12)]
+        t = click_sel.target_celda(words)
+        self.assertEqual(t["y"], 126)
+
+    def test_codigos_a_la_izquierda_se_ignoran(self):
+        words = [CAB, ("12345678", 100, 130, 60, 12), ("1234", 250, 140, 30, 12)]
+        t = click_sel.target_celda(words)
+        self.assertEqual(t["col_left"], 800)   # sin codigos validos: cabecera
+        self.assertEqual(t["x"], 793)   # 800 - margen 7
+
+    def test_prioriza_digitos_sobre_cabecera(self):
+        words = [CAB] + _fila(120, "50867551")
+        t = click_sel.target_celda(words)
+        self.assertLess(t["x"], t["col_right"])
+        self.assertGreaterEqual(t["x"], 860)
+
+
+class TestCabeceraExterna(unittest.TestCase):
+    """Cabecera recuperada por otra via (OCR en modo disperso, psm 11).
+
+    Medido el 28/10: el OCR de pantalla completa pierde la fila de cabecera en
+    algunas capturas; la cabecera llega aparte y los datos siguen saliendo del
+    OCR normal.
+    """
+
+    def test_cabecera_externa_resuelve_el_objetivo(self):
+        # Sin cabecera en las palabras: solo el codigo de la fila de datos.
+        words = _fila(120, "50867551")
+        self.assertIsNone(click_sel.target_celda(words))
+        t = click_sel.target_celda(words, cabecera=CAB)
+        self.assertIsNotNone(t)
+        self.assertEqual(t["col_left"], 860)
+        self.assertEqual(t["col_right"], 920)
+        self.assertEqual(t["x"], 913)
+        self.assertEqual(t["y"], 126)      # la fila de datos, no la cabecera
+        self.assertEqual(t["suscriptores"], 1)
+
+    def test_sin_cabecera_y_sin_fallback_devuelve_none(self):
+        self.assertIsNone(click_sel.target_celda(_fila(120, "50867551")))
+
+    def test_la_cabecera_externa_no_sirve_de_fila_de_datos(self):
+        words = [CAB] + _fila(120, "50867551")
+        t = click_sel.target_celda(words, cabecera=CAB)
+        self.assertEqual(t["y"], 126)
+        self.assertLess(t["y"], 130)
+
+
+if __name__ == "__main__":
+    unittest.main()
