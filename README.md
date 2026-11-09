@@ -146,11 +146,26 @@ netsh advfirewall firewall add rule name="Matriz UI 8765" dir=in action=allow pr
 | `datos/direcciones.csv` | BOM + CRLF + `;` cabecera `parte1;parte2;ficha` | entrada, ids posicionales D01.. |
 | `datos/ledger.csv`      | BOM + CRLF + `;` 13 campos, upsert por id | estado por direccion, reanudacion |
 | `config/jev.json`       | `{url, model, key}`                       | clave y endpoint de Jev |
-| `%USERPROFILE%\.matriz\creds.json` | `{usuario, clave}`             | login del 5250 (fuera del repo) |
+| `%USERPROFILE%\.matriz\creds.json` | `{usuario, clave}`             | login del 5250 (fuera del repo, gana sobre el de repo) |
+| `config/creds.json`     | `{usuario, clave}`                       | login del 5250 (en repo, fallback portable) |
 | `datos/control.json`    | `{"accion": pausar\|detener\|libre}`      | runtime, lo escribe el panel |
 
 El campo `ficha` es multilinea entre comillas y lleva `;` dentro: parsear SIEMPRE
 con el modulo `csv`, nunca con split.
+
+## Dos entornos (mitades)
+
+`datos/direcciones.csv` lleva la PRIMERA mitad (2168) y es la que arranca por
+defecto. La SEGUNDA mitad (2167) esta en `datos/direcciones_segunda.csv`.
+
+Para el segundo entorno (otra laptop), antes de `arranca.bat`:
+
+```powershell
+copy datos\direcciones_segunda.csv datos\direcciones.csv
+python tools\reset_ledger.py
+```
+
+Ambos entornos corren su mitad sin solaparse (cada uno con su propio ledger).
 
 ## Estructura de tools/
 

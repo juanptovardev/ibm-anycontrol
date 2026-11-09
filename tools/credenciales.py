@@ -1,11 +1,13 @@
-"""Credenciales del 5250, FUERA del repo.
+"""Credenciales del 5250.
 
 Orden de lectura:
   1. variables de entorno MATRIZ_5250_USUARIO / MATRIZ_5250_CLAVE
   2. %USERPROFILE%\\.matriz\\creds.json  -> {"usuario": "...", "clave": "..."}
+  3. config/creds.json dentro del repo (fallback portable)
 
-El fichero nunca se commitea (esta fuera del arbol del repo) y la clave nunca
-se escribe en el ledger ni en la traza.
+El fichero de usuario (2) nunca se commitea; el de repo (3) SI va commiteado
+por decision del operador (repo privado interno). La clave nunca se escribe
+en el ledger ni en la traza.
 """
 import json
 import os
@@ -20,15 +22,11 @@ def ruta() -> Path:
     return Path(base) / ".matriz" / "creds.json"
 
 
-def carga() -> dict | None:
-    """Devuelve {"usuario":..., "clave":...} o None si no hay."""
-    u = os.environ.get(ENV_USUARIO)
-    p = os.environ.get(ENV_CLAVE)
-    if u and p:
-        return {"usuario": u, "clave": p}
-    f = ruta()
-    if not f.exists():
-        return None
+def _repo_config() -> Path:
+    return Path(__file__).resolve().parents[1] / "config" / "creds.json"
+
+
+def _lee(f: Path) -> dict | None:
     try:
         d = json.loads(f.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -36,6 +34,18 @@ def carga() -> dict | None:
     if d.get("usuario") and d.get("clave"):
         return {"usuario": str(d["usuario"]), "clave": str(d["clave"])}
     return None
+
+
+def carga() -> dict | None:
+    """Devuelve {"usuario":..., "clave":...} o None si no hay."""
+    u = os.environ.get(ENV_USUARIO)
+    p = os.environ.get(ENV_CLAVE)
+    if u and p:
+        return {"usuario": u, "clave": p}
+    c = _lee(ruta())
+    if c:
+        return c
+    return _lee(_repo_config())
 
 
 def guarda(usuario: str, clave: str) -> Path:
