@@ -133,7 +133,7 @@ async def _seleccionar(s, hwnd: int, dry: bool) -> tuple:
     return img, caja
 
 
-async def _copiar(s) -> int:
+async def _copiar(s, intentos: int = 5, espera: float = 0.1) -> int:
     """Copia el bloque y devuelve CUANTAS lineas con datos tiene.
 
     El portapapeles local SI recibe lo que se copia en el 5250 (medido: la
@@ -141,12 +141,22 @@ async def _copiar(s) -> int:
     las lineas con contenido dice si el bloque pegado es de UNA fila o de
     varias, y de eso depende como se deja el cursor para el pegado siguiente.
 
-    Si la lectura falla se devuelve 0 y el llamador usa el comportamiento
-    historico (Ctrl+Abajo), que es el que nunca ha roto nada.
+    Si la lectura falla se devuelve 0. El caller debe abortar sin pegar ni
+    mover la hoja: un portapapeles vacio puede dejar datos anteriores activos.
     """
-    # El portapapeles local es instantaneo: 0.25 s aqui era espera muerta.
+    # Clipboard local y escritorio remoto comparten el clipboard de AnyDesk.
+    # Si Ctrl+C no lo renueva, no debemos contar ni pegar el bloque anterior.
+    anterior = recepcion._secuencia_portapapeles()
     await pf.step(s, "ctrl_c", "copy_clipboard", {})
-    await asyncio.sleep(0.1)
+    nueva = anterior
+    for _ in range(intentos):
+        await asyncio.sleep(espera)
+        nueva = recepcion._secuencia_portapapeles()
+        if nueva != anterior:
+            break
+    if nueva == anterior:
+        print("A2 el portapapeles no cambio tras Ctrl+C", flush=True)
+        return 0
     try:
         texto = recepcion._portapapeles() or ""
     except Exception:  # noqa: BLE001 - si no se puede leer, se sigue igual
@@ -246,9 +256,15 @@ async def _pegar(s, hwnd: int) -> None:
     print(f"G2b contrato de columnas: {nota_hoja}", flush=True)
     if not ok_hoja:
         raise pf.Halt(f"G2b {nota_hoja}: no se pega")
+    # El portapapeles es la fuente de las filas, pero la diferencia de pantalla
+    # no demuestra que estas celdas recibieron ese contenido. Se conserva como
+    # senal operativa solamente; el ledger se mantiene incierto si el render no
+    # se ve. La lectura de celdas requiere una API de Sheets no disponible aqui.
     await pf.step(s, "ctrl_shift_v", "paste_clipboard", {"shift": True})
     diff, img_post = await _espera_pegado(hwnd, antes)
     print(f"G3 diff={diff}px", flush=True)
+    # G3 observa render visible, no verifica el contenido de las celdas. El
+    # clipboard local no permite leer la seleccion remota tras el paste.
     if diff < PASTE_MIN_CAMBIO:
         # No se reintenta el Ctrl+Shift+V: si el primer pegado si funciono y
         # el remoto solo tardo en pintarlo, reintentar DUPLICA el bloque.
@@ -276,13 +292,26 @@ async def _posicionar(s, hwnd: int, filas: int = 0) -> None:
     una sola direccion con suscriptor, dejo el cursor al final de la hoja y
     los pegados siguientes se fueron para alla. Con una sola fila basta un
     Abajo.
+
+    Cero filas no es un bloque valido. Se aborta antes de enviar cualquier
+    tecla: usar Ctrl+Abajo en ese caso mueve la hoja sin una copia confirmada.
     """
+    if filas <= 0:
+        raise pf.Halt("G3 portapapeles sin lineas: no se mueve la hoja")
     if filas == 1:
         await pf.step(s, "abajo", "press_keys", {"keys": ["down"]})
     else:
         await pf.step(s, "ctrl_down", "press_keys", {"keys": ["ctrl", "down"]})
         await pf.step(s, "abajo", "press_keys", {"keys": ["down"]})
     pf.shot(hwnd, "cp-listo")
+
+
+async def _pegar_y_posicionar(s, hwnd: int, filas: int) -> None:
+    """No usar un portapapeles vacio ni mover la hoja si no hay filas."""
+    if filas <= 0:
+        raise pf.Halt("G3 portapapeles sin lineas: no se pega ni se mueve la hoja")
+    await _pegar(s, hwnd)
+    await _posicionar(s, hwnd, filas)
 
 
 async def _secuencia(hwnd: int, dry: bool) -> bool:
@@ -301,8 +330,7 @@ async def _secuencia(hwnd: int, dry: bool) -> bool:
                 print("DRY: seleccion medida, no se copio nada", flush=True)
                 return True
             filas = await _copiar(s)
-            await _pegar(s, hwnd)
-            await _posicionar(s, hwnd, filas)
+            await _pegar_y_posicionar(s, hwnd, filas)
         except pf.Halt as exc:
             # Se captura DENTRO del context manager: si sale de el, anyio lo
             # envuelve en ExceptionGroup y se pierde el motivo.

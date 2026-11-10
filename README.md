@@ -22,6 +22,7 @@ de la empresa. No hacerlo publico ni activar port-forwarding del panel.
    icono de la taskbar, Ctrl+Shift+V, desplaza el cursor y vuelve al 5250.
 5. Avanza pagina con AvPag leyendo el contador NN/NNN, detecta fin de archivo.
 6. Deja todo en el ledger (tabla, una fila por direccion, reanudable por pagina).
+   Si se interrumpe durante un pegado, la direccion queda para revision manual.
 
 ## Instalacion en otra laptop (para la IA instaladora)
 
@@ -137,7 +138,8 @@ netsh advfirewall firewall add rule name="Matriz UI 8765" dir=in action=allow pr
 
 1. Panel: PAUSAR (se congela entre bloques) o DETENER (corta limpio).
 2. Panel: MATAR (taskkill del arbol del agente).
-3. Fisico: apagar el PC / quitar la red. El ledger reanuda sin duplicar.
+3. Fisico: apagar el PC / quitar la red. El ledger conserva el avance confirmado;
+   si interrumpio una pagina en curso, revisar la hoja antes de reiniciarla.
 
 ## Contratos de datos (van en el repo, uso interno)
 
@@ -201,7 +203,9 @@ python -m unittest discover -s tests    # 394 tests de referencia, sin pytest
 - El hwnd de AnyDesk y del viewport rotan en cada reconexion: nunca cachearlos.
 - El cambio de ventana 5250 <-> Chrome se hace por icono de taskbar (Alt+Tab no llega).
 - Excel abierto bloquea direcciones.csv: las fichas van a `datos/fichas_pendientes.csv`.
-- `no_encontrado` y `pegado_dudoso` son estados terminales: no se reintentan.
+- `no_encontrado`, `pegado_dudoso` y `requiere_revision` no se reintentan solos.
+- `requiere_revision` indica pagina maxima, contador ilegible o pegado
+  interrumpido. Revisar Sheets antes de resetear el ledger desde ese ID.
 - Una direccion con 3 fallos consecutivos se congela y no se reintenta.
 - El agente controla el cursor y el foco de la laptop. No usar esa laptop mientras
   corre; detener desde el panel del celular. Manana conviene moverlo a un PC

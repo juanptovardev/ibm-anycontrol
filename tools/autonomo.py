@@ -272,7 +272,10 @@ async def _pre_vuelo_intento(s, hwnd: int, intento: int) -> bool:
             return False
         print("  [pre] no se vuelve al 5250", flush=True)
         return False
-    if est in ("cuenta_matriz", "ficha", "error", "mensajes"):
+    # 'fin_libro' entra igual que el listado: `entrar_formulario` lo saca con
+    # ESC + F12 + F12. Sin esto, una matriz que acaba en fin_libro dejaba el
+    # pre-vuelo ciclando 8 veces y el lote moria (medido 09/11).
+    if est in ("cuenta_matriz", "ficha", "error", "mensajes", "fin_libro"):
         if await L.entrar_formulario(s, hwnd):
             return True
         return False
@@ -324,6 +327,14 @@ async def por_direccion(s, hwnd: int, filas: list, dry: bool,
         # operador cambia una fila del CSV, el id apunta a otra direccion).
         desde = L.reanuda_desde(L.ledger_en_curso(), f)
         res = await L.procesa(f, hwnd, s, dry, desde_pagina=desde, solo_ficha=solo_ficha)
+        if (not dry and
+                L.ledger_leido().get(id_, {}).get("estado") == "pegando" and
+                res.get("estado") != "ok"):
+            res["estado"] = "requiere_revision"
+            res["notas"] = (res.get("notas", "") +
+                            "; resultado incierto tras interrupcion: revisar hoja")
+            res["hora_fin"] = time.strftime("%H:%M:%S")
+            L.ledger_escribe({k: res.get(k, "") for k in L.CAMPOS_LEDGER})
         # B6/B7: el resultado se persiste en el ledger ANTES de seguir. Sin esto
         # el resumen y el dossier releen datos viejos y una re-corrida puede
         # duplicar pegadas.
@@ -334,6 +345,10 @@ async def por_direccion(s, hwnd: int, filas: list, dry: bool,
         resultados.append(res)
         print(f"  -> estado={res.get('estado')} paginas={res.get('paginas_vistas')} "
               f"filas={res.get('filas_copiadas')} | {res.get('notas','')}")
+        if res.get("estado") in ("pegando", "requiere_revision", "pegado_dudoso"):
+            print(f"  {id_}: estado incierto; lote detenido para revision manual",
+                  flush=True)
+            break
         traza_segura("registrar", "ok" if res.get("estado") == "ok" else "fallo",
                      f"{id_} {res.get('notas','')}")
         # Reencuadre al formulario. Si aqui revienta (por ejemplo el foco se
@@ -447,7 +462,8 @@ async def corre(hwnd: int | None, ids: str | None, dry: bool,
     # vueltas siguientes para no re-buscar lo mismo, igual que las 'ok'.
     pendientes = [f for f in filas
                   if hechos.get(f.get("id"), {}).get("estado")
-                  not in ("ok", "no_encontrado")]
+                  not in ("ok", "no_encontrado", "pegado_dudoso",
+                          "requiere_revision", "pegando")]
     print(f"direcciones: {len(filas)} | pendientes: {len(pendientes)} | "
           f"ya ok: {len(filas) - len(pendientes)}")
     if not pendientes:

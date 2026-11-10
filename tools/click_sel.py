@@ -285,9 +285,8 @@ async def _secuencia(hwnd: int, dry: bool, force: bool = False) -> bool:
                 await pf.step(s, "limpiar", "press_keys", {"keys": ["escape"]})
                 print("DRY: seleccion medida, no se copio nada", flush=True)
                 return True
-            await cp._copiar(s)
-            await cp._pegar(s, hwnd)
-            await cp._posicionar(s, hwnd)
+            filas = await cp._copiar(s)
+            await cp._pegar_y_posicionar(s, hwnd, filas)
         except pf.Halt as exc:
             # Dentro del context manager: si sale, anyio lo envuelve en
             # ExceptionGroup y se pierde el motivo.

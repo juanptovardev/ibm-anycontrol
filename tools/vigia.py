@@ -13,9 +13,17 @@ se puede pulsar con un clic local. Los botones de AnyDesk son dibujados a mano
 (clase `basic_button#N`), por eso NO se usa BM_CLICK: se mueve el cursor al
 centro del boton, se hace clic y se devuelve el cursor a donde estaba.
 
+Ademas del corte de licencia existe el ANUNCIO de uso comercial (medido
+09/11/2026): un modal `ad_modal_dlg` con titulo vacio y sin botones, cuya «X»
+de cierre es dibujada (no es una ventana). Se cierra con despeja_anuncio()
+(espera 20 s y pulsa la «X» por coordenadas). reconecta() lo reutiliza: tras
+pulsar Repetir, si la validacion de siempre (dialogo() cerrado) detecta que lo
+que queda es el anuncio, lo cierra.
+
 Uso:
   python tools/vigia.py <hwnd>             # solo informa (no toca nada)
   python tools/vigia.py <hwnd> --repetir   # pulsa Repetir y espera que cierre
+  python tools/vigia.py <hwnd> --anuncio   # cierra el anuncio de uso comercial
 """
 import sys
 import time
@@ -30,6 +38,17 @@ ESPERA_DIALOGO = 25.0
 PASO_SONDEO = 0.5
 ETIQUETAS = ("Repetir", "Suscribirse", "OK")
 CLASE_MODAL = "ad_modal_dlg"
+
+# Anuncio de uso comercial (medido 09/11/2026): es un modal `ad_modal_dlg` con
+# titulo vacio y SIN botones (sus botones son dibujados a mano, no ventanas
+# Win32, por eso EnumChildWindows no los devuelve). Su «X» de cierre tambien es
+# dibujada, asi que se pulsa por coordenadas con un offset fijo desde la esquina
+# superior izquierda del modal. Medido sobre la captura 1:1 del modal
+# (PrintWindow, 480x384): la «X» esta en el boton redondo de la esquina superior
+# derecha, centro ≈ (463,15) modal-local.
+ANUNCIO_X_OFF = 463
+ANUNCIO_Y_OFF = 11
+ESPERA_ANUNCIO = 20.0
 
 
 def _hijos(hwnd: int) -> list[tuple[int, str, str]]:
@@ -84,6 +103,72 @@ def boton(dlg: dict, etiqueta: str = "Repetir") -> int:
     return 0
 
 
+def anuncio(hwnd_raiz: int) -> dict:
+    """Modal del anuncio de uso comercial abierto, o {} si no lo esta.
+
+    Se distingue del corte de licencia en que el anuncio NO tiene boton Repetir.
+    """
+    dlg = dialogo(hwnd_raiz)
+    if dlg and not boton(dlg, "Repetir"):
+        return dlg
+    return {}
+
+
+def punto_cierre(dlg: dict) -> tuple[int, int]:
+    """Coordenada de pantalla del «X» del anuncio (offset fijo desde su rect)."""
+    x0, y0, _x1, _y1 = win32gui.GetWindowRect(dlg["hwnd"])
+    return x0 + ANUNCIO_X_OFF, y0 + ANUNCIO_Y_OFF
+
+
+def _clic_punto(x: int, y: int) -> dict:
+    """Clic local en coordenadas, devolviendo el cursor a donde estaba."""
+    previo = win32api.GetCursorPos()
+    win32api.SetCursorPos((x, y))
+    time.sleep(0.15)
+    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+    time.sleep(0.05)
+    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+    time.sleep(0.2)
+    win32api.SetCursorPos(previo)
+    return {"via": "punto", "x": x, "y": y}
+
+
+def despeja_anuncio(hwnd_raiz: int, espera: float = ESPERA_ANUNCIO) -> dict:
+    """Cierra el anuncio de uso comercial: espera `espera` s y pulsa su «X».
+
+    La espera la pidio el operador (el anuncio tarda en dejar cerrarse). Si no
+    hay anuncio abierto no hace nada.
+    """
+    dlg = anuncio(hwnd_raiz)
+    if not dlg:
+        return {"ok": True, "motivo": "sin anuncio", "segundos": 0.0}
+    try:
+        raiz_ = win32gui.GetAncestor(dlg["hwnd"], win32con.GA_ROOT) or hwnd_raiz
+    except Exception:  # noqa: BLE001 - la ventana pudo desaparecer entre medias
+        raiz_ = hwnd_raiz
+    _traer_al_frente(raiz_)
+    x, y = punto_cierre(dlg)
+    time.sleep(espera)
+    clic = _clic_punto(x, y)
+    t0 = time.time()
+    while time.time() - t0 < 5.0:
+        if not dialogo(hwnd_raiz):
+            return {"ok": True, "clic": clic, "espera": espera,
+                    "segundos": round(time.time() - t0, 2)}
+        time.sleep(PASO_SONDEO)
+    return {"ok": False, "motivo": "el anuncio sigue abierto tras el clic",
+            "clic": clic}
+
+
+def _cierra_anuncio(hwnd_raiz: int, etiqueta: str, clic: dict, intentos: list,
+                    estrategia: str, segundos: float) -> dict:
+    """El corte de licencia ya paso pero quedo el anuncio: se cierra."""
+    desp = despeja_anuncio(hwnd_raiz)
+    return {"ok": bool(desp.get("ok")), "boton": etiqueta, "clic": clic,
+            "anuncio": desp, "segundos": segundos,
+            "intentos": intentos + [estrategia]}
+
+
 def _traer_al_frente(hwnd: int) -> None:
     """AnyDesk tiene que estar delante: un clic fisico cae en la ventana de arriba."""
     try:
@@ -135,8 +220,9 @@ def reconecta(hwnd_raiz: int, etiqueta: str = "Repetir",
         return {"ok": False, "motivo": "no hay dialogo de licencia abierto"}
     h = boton(dlg, etiqueta)
     if not h:
-        return {"ok": False, "motivo": f"sin boton {etiqueta!r}",
-                "botones": list(dlg["botones"])}
+        # Lo que hay es el anuncio (sin Repetir): no hay sesion que reconectar,
+        # solo cerrarlo.
+        return despeja_anuncio(hwnd_raiz)
 
     intentos = []
     for estrategia in (clic_fisico, clic_mensaje):
@@ -147,18 +233,30 @@ def reconecta(hwnd_raiz: int, etiqueta: str = "Repetir",
             # fisico cerro el dialogo y el handle quedo invalido -> error 1400).
             # Eso significa que el dialogo ya no esta: no es un fallo.
             clic = {"via": estrategia.__name__, "error": str(exc)}
-            if not dialogo(hwnd_raiz):
+            dlg2 = dialogo(hwnd_raiz)
+            if not dlg2:
                 return {"ok": True, "boton": etiqueta, "clic": clic,
                         "segundos": 0.0,
                         "intentos": intentos + [estrategia.__name__]}
+            if not boton(dlg2, etiqueta):
+                return _cierra_anuncio(hwnd_raiz, etiqueta, clic, intentos,
+                                       estrategia.__name__, 0.0)
             intentos.append(estrategia.__name__ + " (error)")
             continue
         t0 = time.time()
         while time.time() - t0 < espera:
-            if not dialogo(hwnd_raiz):
+            # La validacion de siempre: el dialogo cerrado = entro. Si lo que
+            # queda es el anuncio (sin Repetir), la sesion ya entro y solo hay
+            # que despejar el anuncio antes de seguir.
+            dlg2 = dialogo(hwnd_raiz)
+            if not dlg2:
                 return {"ok": True, "boton": etiqueta, "clic": clic,
                         "segundos": round(time.time() - t0, 2),
                         "intentos": intentos + [estrategia.__name__]}
+            if not boton(dlg2, etiqueta):
+                return _cierra_anuncio(hwnd_raiz, etiqueta, clic, intentos,
+                                       estrategia.__name__,
+                                       round(time.time() - t0, 2))
             time.sleep(PASO_SONDEO)
         intentos.append(estrategia.__name__)
     return {"ok": False, "motivo": f"el dialogo sigue abierto tras {espera}s",
@@ -179,6 +277,10 @@ def main(argv: list[str]) -> int:
     print(f"dialogo={dlg['titulo']!r} botones={list(dlg['botones'])}")
     if "--repetir" in argv:
         res = reconecta(r)
+        print(res)
+        return 0 if res.get("ok") else 1
+    if "--anuncio" in argv:
+        res = despeja_anuncio(r)
         print(res)
         return 0 if res.get("ok") else 1
     return 0

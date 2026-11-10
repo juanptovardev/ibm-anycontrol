@@ -53,6 +53,28 @@ class TestUIPanel(unittest.TestCase):
         ui.TOKEN = "abc"
         self.assertTrue(self._handler("/img", {"X-Token": "abc"})._autorizado())
 
+    def test_reanudar_usa_el_contrato_libre(self):
+        self.assertEqual(ui.normaliza_accion("reanudar"), "libre")
+        self.assertEqual(ui.normaliza_accion("pausar"), "pausar")
+        self.assertEqual(ui.normaliza_accion("detener"), "detener")
+
+    def test_accion_invalida_rechazada(self):
+        with self.assertRaises(ValueError):
+            ui.normaliza_accion("continuar")
+
+    def test_ledger_expone_contador_de_reanudacion(self):
+        import csv
+        with (Path(self.td.name) / "ledger.csv").open(
+                "w", encoding="utf-8", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=["id", "estado", "paginas_vistas",
+                                               "filas_copiadas"], delimiter=";")
+            w.writeheader()
+            w.writerow({"id": "D05", "estado": "en_curso",
+                        "paginas_vistas": 7, "filas_copiadas": 45})
+        row = ui.estado()["ledger"][0]
+        self.assertEqual(row["paginas_vistas"], "7")
+        self.assertEqual(row["filas_copiadas"], "45")
+
 
 if __name__ == "__main__":
     unittest.main()

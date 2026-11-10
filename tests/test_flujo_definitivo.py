@@ -285,9 +285,9 @@ class TestSoloFicha(unittest.IsolatedAsyncioTestCase):
 class TestPaginasVistas(unittest.IsolatedAsyncioTestCase):
     """paginas_vistas cuenta las paginas AVANZADAS (pegadas + saltadas)."""
 
-    async def _corre(self):
+    async def _corre(self, max_paginas=None):
         filas_ledger = []
-        llamadas = {"extrae": 0}
+        llamadas = {"extrae": 0, "bajar": []}
 
         async def fake_step(s, label, name, args=None):
             return {"ok": True}
@@ -307,8 +307,12 @@ class TestPaginasVistas(unittest.IsolatedAsyncioTestCase):
 
         async def fake_extrae(s, hwnd, dry=False, bajar=True, previo=None):
             llamadas["extrae"] += 1
+            llamadas["bajar"].append(bajar)
             # primera pagina vacia (se salta), segunda con datos (se pega)
-            return "vacia" if llamadas["extrae"] == 1 else "ok"
+            if llamadas["extrae"] == 1:
+                return "vacia"
+            L.ciclo.ULTIMAS_FILAS = 15
+            return "ok"
 
         async def fake_volver(s, hwnd, intentos=3, sondeos=4):
             return True
@@ -338,8 +342,9 @@ class TestPaginasVistas(unittest.IsolatedAsyncioTestCase):
                 patch.object(L, "volver_formulario", fake_entrar), \
                 patch.object(L, "hay_dialogo", lambda h: False), \
                 patch.object(L, "reconecta_si_hace_falta", lambda h: True), \
-                patch.object(L, "obedece", lambda: "seguir"), \
-                patch.object(L.asyncio, "sleep", fake_sleep):
+             patch.object(L, "obedece", lambda: "seguir"), \
+             patch.object(L, "MAX_PAGINAS", max_paginas if max_paginas is not None else L.MAX_PAGINAS), \
+                 patch.object(L.asyncio, "sleep", fake_sleep):
             rowdet.detect.return_value = (MagicMock(), {}, filas)
             traza.evento = lambda *a, **k: None
             matriz_extraer.extrae_bloque = fake_extrae
@@ -347,23 +352,34 @@ class TestPaginasVistas(unittest.IsolatedAsyncioTestCase):
             pagina.avanza = fake_avanza
             decisiones = {"n": 0}
 
-            def fake_decide(estado, no_ibm):
+            def fake_decide(estado, no_ibm, sin_cambio=False):
                 # 1a pagina (vacia) -> seguir; 2a (pegada) -> fin
                 decisiones["n"] += 1
                 return "fin" if decisiones["n"] >= 2 else "seguir"
 
             pagina.decide = fake_decide
-            await L.procesa(_fila(), 123, object())
-        return filas_ledger
+            resultado = await L.procesa(_fila(), 123, object())
+        esperado = [True] if max_paginas == 1 else [True, False]
+        self.assertEqual(llamadas["bajar"], esperado)
+        return filas_ledger, resultado
 
     async def test_una_pagina_vacia_cuenta_para_reanudar(self):
-        filas = await self._corre()
+        filas, _res = await self._corre()
         en_curso = [f for f in filas if f.get("estado") == "en_curso"]
         self.assertTrue(en_curso)
         # 1 pagina saltada + 1 pegada = 2 paginas avanzadas
-        self.assertEqual(en_curso[0]["paginas_vistas"], 2)
+        self.assertEqual(en_curso[-1]["paginas_vistas"], 2)
         # las filas copiadas solo cuentan las pegadas
-        self.assertEqual(en_curso[0]["filas_copiadas"], 15)
+        self.assertEqual(en_curso[-1]["filas_copiadas"], 15)
+
+    async def test_tope_de_paginas_no_marca_direccion_ok(self):
+        # El primer AvPag sigue en el listado; al alcanzar el limite configurado
+        # sin fin_libro, el item queda en revision y no se cuenta como completo.
+        with patch.object(L, "MAX_PAGINAS", 1):
+            filas, res = await self._corre(max_paginas=1)
+        self.assertEqual(filas[-1]["estado"], "requiere_revision")
+        self.assertEqual(res["estado"], "requiere_revision")
+        self.assertIn("tope de", res["notas"])
 
 
 class TestReencuadreNoTumbaElLote(unittest.IsolatedAsyncioTestCase):

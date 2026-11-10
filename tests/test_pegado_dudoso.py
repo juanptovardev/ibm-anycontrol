@@ -44,13 +44,16 @@ class TestMarca(unittest.TestCase):
 class TestSupervisorNoLoReintenta(unittest.TestCase):
     def test_es_terminal(self):
         self.assertIn("pegado_dudoso", sup.TERMINALES)
+        self.assertIn("requiere_revision", sup.TERMINALES)
 
     def test_no_cuenta_como_pendiente(self):
         est = {"D01": {"id": "D01", "estado": "pegado_dudoso"},
                "D02": {"id": "D02", "estado": "ok"},
-               "D03": {"id": "D03", "estado": "error"}}
+               "D03": {"id": "D03", "estado": "error"},
+               "D04": {"id": "D04", "estado": "requiere_revision"}}
         pendientes = [f.get("id") for f in sup.pendientes(est)]
         self.assertNotIn("D01", pendientes)
+        self.assertNotIn("D04", pendientes)
         self.assertIn("D03", pendientes)
 
 

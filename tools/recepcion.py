@@ -27,6 +27,7 @@ CF_UNICODETEXT = 13
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
 user32.GetClipboardData.restype = ctypes.c_void_p
+user32.GetClipboardSequenceNumber.restype = ctypes.c_uint
 kernel32.GlobalLock.restype = ctypes.c_void_p
 kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
 kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
@@ -49,6 +50,11 @@ def _portapapeles() -> str:
             kernel32.GlobalUnlock(ctypes.c_void_p(handle))
     finally:
         user32.CloseClipboard()
+
+
+def _secuencia_portapapeles() -> int:
+    """Numero de version de Windows: cambia cuando cambia el clipboard."""
+    return int(user32.GetClipboardSequenceNumber())
 
 
 def normaliza(texto: str) -> str:

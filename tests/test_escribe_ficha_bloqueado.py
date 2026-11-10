@@ -39,7 +39,8 @@ class TestEscribeFichaBloqueado(unittest.TestCase):
             real_open = builtins.open
 
             def open_bloqueado(file, mode="r", *a, **k):
-                if "w" in mode and str(file).endswith("direcciones.csv"):
+                if ("w" in mode and str(file).endswith("direcciones.csv") or
+                        "r" in mode and str(file).endswith("ledger.csv")):
                     raise PermissionError(13, "Permission denied", str(file))
                 return real_open(file, mode, *a, **k)
 

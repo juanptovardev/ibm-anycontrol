@@ -56,6 +56,31 @@ class TestParse(unittest.TestCase):
             self.assertEqual(r["parte1"], p1)
             self.assertEqual(r["parte2"], p2)
 
+    def test_corta_la_direccion_pegada_en_parte2(self):
+        # Celdas del operador con varias direcciones o sufijos detras del numero
+        # de casa: solo el primer numero de casa va a parte2 (medido el 09/11:
+        # D117, D488, D1052, D1235 y ~30 mas traian media lista en parte2 y el
+        # F10 no encontraba nada).
+        casos = [
+            ("CR 92A 70B-59 CL 71BIS 91-72 CL 71BIS 92A-20", "CR 92A", "70B-59"),
+            ("CR 94F 134-34 BLQ 14 CR 94F 134-04 BLQ 15", "CR 94F", "134-34"),
+            ("CL 127BBIS 53-68 BLQ 5", "CL 127BBIS", "53-68"),
+            ("CR 72ASUR 62D-10 MZA 1_ENT 5", "CR 72ASUR", "62D-10"),
+            ("CR 24BSUR 13BIS-27", "CR 24BSUR", "13BIS-27"),
+            ("CR 79BSUR 58PBIS-05", "CR 79BSUR", "58PBIS-05"),
+        ]
+        for entrada, p1, p2 in casos:
+            r = separar.parse(entrada)
+            self.assertEqual(r["estado"], "parsed", entrada)
+            self.assertEqual(r["parte1"], p1, entrada)
+            self.assertEqual(r["parte2"], p2, entrada)
+
+    def test_numero_plano_se_conserva(self):
+        # Sin guion el numero es legitimo (viene de las direcciones con dos
+        # calles reescritas): no se toca.
+        r = separar.parse("CL 23 41")
+        self.assertEqual((r["parte1"], r["parte2"]), ("CL 23", "41"))
+
     def test_vacia(self):
         for malo in ("", "   ", None):
             self.assertEqual(separar.parse(malo)["estado"], "unparsed")

@@ -29,21 +29,32 @@ ESPERA_PAGINA_LENTA = 0.7  # primer AvPag de la direccion: sin referencia previa
 # Minimo de pixeles que deben cambiar entre paginas. Si la pantalla casi no
 # cambia, el AvPag todavia no se ha procesado y NO se debe copiar (si no, se
 # pega la pagina anterior otra vez: duplicado).
-PAGINA_MIN_DIFF = 3000
+# Medido el 09/11 sobre 2865 pares de capturas reales: identicas = 0 px; solo el
+# reloj = 34-36 px; avance real de pagina = 681 px o mas (tipico 2000-50000).
+# Con 3000 se descartaban avances REALES de ~2209 px (D46/D53/D54/D60/D69) y la
+# direccion abortaba en bucle. 400 queda entre el ruido del reloj y el cambio
+# real mas pequeno.
+PAGINA_MIN_DIFF = 400
 # Estados que significan "seguimos dentro del listado del 5250".
 IBM_OK = {"cuenta_matriz", "fin_libro"}
 # Ultima captura de avanza(): el ciclo la reutiliza y no repite el OCR.
 ULTIMA = None
 
 
-def decide(estado: str | None, no_ibm: bool = False) -> str:
-    """Accion pura a partir del estado de la pantalla: seguir | fin | abortar."""
+def decide(estado: str | None, no_ibm: bool = False,
+           sin_cambio: bool = False) -> str:
+    """Accion pura a partir del estado de la pantalla: seguir | fin | abortar.
+
+    `sin_cambio` avisa de que la pantalla NO cambio tras el AvPag: puede ser la
+    ultima pagina repetida (copiarla seria duplicar) o una tecla perdida. En los
+    dos casos se aborta: el ledger ya guardo el punto y la corrida reanuda ahi.
+    """
     if no_ibm:
         return "abortar"
     if estado == "fin_libro":
         return "fin"
     if estado == "cuenta_matriz":
-        return "seguir"
+        return "abortar" if sin_cambio else "seguir"
     return "abortar"
 
 
@@ -104,9 +115,8 @@ async def reanudar(s, hwnd: int, objetivo: int, intentos: int = 4,
                    espera: float = 0.9):
     """Deja el listado en la pagina `objetivo` mirando el contador NN/NNN.
 
-    Devuelve (pagina_real, nota). Si el contador no se puede leer en ningun
-    intento, se cae al comportamiento historico (AvPag x N a ciegas) y se
-    avisa en la nota: es lo unico que se puede hacer sin saber donde estamos.
+    Devuelve (pagina_real, nota). Si no se puede leer el contador, devuelve
+    None: avanzar a ciegas puede saltar o duplicar paginas.
     """
     actual = total = None
     for _ in range(intentos):
@@ -118,11 +128,7 @@ async def reanudar(s, hwnd: int, objetivo: int, intentos: int = 4,
         await asyncio.sleep(espera)
 
     if actual is None:
-        for k in range(max(0, objetivo - 1)):
-            await pf.step(s, f"resuma_avpag_{k}", "press_keys",
-                          {"keys": ["pagedown"]})
-            await asyncio.sleep(1.1)
-        return objetivo, "sin contador de pagina: se avanzo a ciegas"
+        return None, "sin contador de pagina: reanudacion abortada sin AvPag"
 
     saltos = pasos_reanudar(actual, objetivo)
     if saltos == 0:
@@ -211,24 +217,42 @@ async def avanza(s, hwnd: int, intentos: int = 3,
     await asyncio.sleep(ESPERA_PAGINA if prev is not None else ESPERA_PAGINA_LENTA)
     st = None
     img = texto = words = None
+    sin_cambio = False
     for i in range(intentos):
         img = pf.shot(hwnd, "pagina")
-        if prev is not None and pf.changed_px(prev, img) < PAGINA_MIN_DIFF:
+        ultimo = i == intentos - 1
+        cambio = prev is None or pf.changed_px(prev, img) >= PAGINA_MIN_DIFF
+        # El guard del diff evita copiar la MISMA pagina si el AvPag aun no se
+        # proceso. Pero en el ULTIMO intento se clasifica igual: al final de la
+        # matriz el AvPag no redibuja y, sin clasificar, el estado quedaba None
+        # y el llamador reventaba con AttributeError (medido 09/11: D46/D54/
+        # D60/D69). Clasificando se ve el cartel de fin de archivo.
+        if not cambio and not ultimo:
             print(f"PAGINA la pantalla casi no cambio (intento {i + 1}/{intentos}): "
                   f"se recaptura", flush=True)
             await asyncio.sleep(ESPERA_PAGINA)
             continue
         texto, words = ocr_completo(img)
-        st = clasificar_texto(texto, usar_jev=(i == intentos - 1))
+        st = clasificar_texto(texto, usar_jev=ultimo)
         if st.get("estado") is not None:
+            sin_cambio = not cambio
             break
         print(f"PAGINA sin lectura (intento {i + 1}/{intentos}): se recaptura",
               flush=True)
         await asyncio.sleep(ESPERA_PAGINA)
-    ULTIMA = {"img": img, "texto": texto, "words": words}
+    if st is None:
+        # Nunca se pudo leer: se devuelve un dict vacio (no None) para que el
+        # llamador no reviente; decide() lo trata como 'abortar'.
+        st = {"estado": None, "confianza": None, "senales": {},
+              "error": "pagina sin lectura tras los intentos"}
+    ULTIMA = {"img": img, "texto": texto, "words": words, "sin_cambio": sin_cambio}
+    # El llamador decide() con este aviso: si la pantalla no cambio y sigue el
+    # listado, es la misma pagina (copiarla seria duplicar).
+    st["sin_cambio"] = sin_cambio
     senales = st.get("senales") or {}
     print(f"PAGINA estado={st['estado']} conf={st.get('confianza')} "
-          f"senal_fin={senales.get('fin')} error={st.get('error')}", flush=True)
+          f"senal_fin={senales.get('fin')} sin_cambio={sin_cambio} "
+          f"error={st.get('error')}", flush=True)
     return st
 
 
@@ -240,7 +264,8 @@ async def _run(hwnd: int) -> bool:
             await volver(s, hwnd)
             st = await avanza(s, hwnd)
             decision = decide(st["estado"],
-                              bool((st.get("senales") or {}).get("no_ibm")))
+                              bool((st.get("senales") or {}).get("no_ibm")),
+                              bool(st.get("sin_cambio")))
             print(f"DECISION: {decision}", flush=True)
             if decision == "abortar":
                 raise pf.Halt(f"pagina: estado inesperado {st['estado']}")

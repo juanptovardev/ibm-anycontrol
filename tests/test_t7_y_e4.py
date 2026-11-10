@@ -65,8 +65,7 @@ class TestE4SinSelBox(unittest.TestCase):
     def test_ciclo_sigue_pasting_y_desplazando(self):
         txt = self._ciclo()
         self.assertIn("cp._copiar(s)", txt)
-        self.assertIn("cp._pegar(s, hwnd)", txt)
-        self.assertIn("cp._posicionar(s, hwnd, filas)", txt)
+        self.assertIn("cp._pegar_y_posicionar(s, hwnd, filas)", txt)
 
 
 if __name__ == "__main__":

@@ -120,9 +120,10 @@ class TestReanudar(unittest.TestCase):
         self.assertEqual((real, avpags), (6, 0))
         self.assertIn("no se retrocede", nota)
 
-    def test_sin_contador_avanza_a_ciegas(self):
+    def test_sin_contador_aborta_sin_avanzar_a_ciegas(self):
         real, nota, avpags = _corre([[("nada", 0, 0, 10, 10)]], 3)
-        self.assertEqual((real, avpags), (3, 2))
+        self.assertIsNone(real)
+        self.assertEqual(avpags, 0)
         self.assertIn("sin contador", nota)
 
     def test_si_se_agota_no_miente(self):
@@ -139,6 +140,24 @@ class TestLoopUsaElContador(unittest.TestCase):
                "loop.py").read_text(encoding="utf-8")
         self.assertIn("pagina.reanudar(", src)
         self.assertNotIn('"resuma_avpag_', src)
+
+
+class TestSinAvanceCiego(unittest.TestCase):
+    def test_contador_ilegible_no_inyecta_avpag(self):
+        from unittest.mock import AsyncMock, patch
+
+        async def corre():
+            with patch.object(pagina, "captura", lambda _h: (_Img(), {})), \
+                    patch.object(pagina, "ocr_completo", return_value=("", [])), \
+                    patch.object(pagina.pf, "step", new=AsyncMock()) as step, \
+                    patch.object(pagina.asyncio, "sleep", new=AsyncMock()):
+                resultado = await pagina.reanudar(None, 1, 4, espera=0)
+                return resultado, step
+
+        (real, nota), step = asyncio.run(corre())
+        self.assertIsNone(real)
+        self.assertIn("abortada sin AvPag", nota)
+        step.assert_not_awaited()
 
 
 if __name__ == "__main__":

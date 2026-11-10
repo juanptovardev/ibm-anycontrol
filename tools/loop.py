@@ -161,22 +161,19 @@ def ledger_leido(ruta: Path = LEDGER) -> dict:
 def es_resumable(fila: dict) -> bool:
     """True si la fila dice que esa direccion quedo a medias.
 
-    Resumible = 'en_curso', 'pegando' (se estaba pegando una pagina cuando el
-    proceso murio) o un error despues de haber pegado alguna pagina
-    (paginas_vistas > 0). 'ok' y 'no_encontrado' no se reanudan.
-
-    'pegando' cuenta como resumible aunque paginas_vistas sea 0: la pagina en
-    curso pudo quedar pegada a medias, y rehacerla es mejor que darla por
-    buena (un hueco no se ve; un duplicado si).
+    Resumible = 'en_curso' o un error despues de haber pegado alguna pagina
+    (paginas_vistas > 0). 'requiere_revision' nunca se relanza automaticamente:
+    el operador debe comprobar si la pagina incierta ya se pego.
     """
     estado = (fila.get("estado") or "").strip()
-    if estado in ("ok", "no_encontrado"):
+    if estado in ("ok", "no_encontrado", "pegado_dudoso", "requiere_revision",
+                  "pegando"):
         return False
     try:
         paginas = int(fila.get("paginas_vistas") or 0)
     except (TypeError, ValueError):
         paginas = 0
-    return estado in ("en_curso", "pegando") or paginas > 0
+    return estado == "en_curso" or (estado == "error" and paginas > 0)
 
 
 def ledger_en_curso(ruta: Path = LEDGER) -> dict:
@@ -411,8 +408,12 @@ async def entrar_formulario(s, hwnd: int) -> bool:
     # F3 NO sale de CONSULTA UNIDADES (su barra solo tiene F12=Anterior) y con
     # el teclado inhibido ('A X II') se ignora. La ruta es Escape + F12 + F12
     # (listado -> ficha -> formulario). Sin esto la segunda direccion fallaba
-    # con 'B1 pantalla cuenta_matriz' (medido 28/10).
-    if r.get("estado") in ("cuenta_matriz", "ficha"):
+    # con 'B1 pantalla cuenta_matriz' (medido 28/10). 'fin_libro' es el mismo
+    # listado con el aviso de giro mas alla del ultimo registro: la barra solo
+    # tiene F12=Anterior, asi que se sale por la MISMA ruta. Sin esto, cuando
+    # una matriz acababa en fin_libro el pre-vuelo no sabia salir y el lote
+    # moria con 'STOP: no se pudo dejar la pantalla en el formulario' (09/11).
+    if r.get("estado") in ("cuenta_matriz", "ficha", "fin_libro"):
         return await volver_formulario(s, hwnd)
     # Aviso duro residual (p. ej. el F10 de la direccion anterior no encontro
     # nada): el 5250 deja el mensaje abajo y el teclado inhibido, asi que el
@@ -693,6 +694,12 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                 real, nota = await pagina.reanudar(s, hwnd, objetivo_pag)
                 if nota:
                     print(f"  reanudacion: {nota}", flush=True)
+                if real is None:
+                    res.update(estado="requiere_revision", notas=nota)
+                    res["hora_fin"] = time.strftime("%H:%M:%S")
+                    if not dry:
+                        ledger_escribe(res)
+                    return res
                 # Si el listado ya estaba MAS adelante de lo que dice el
                 # ledger, se sigue desde donde esta: retroceder duplicaria lo
                 # que ya se pego.
@@ -705,6 +712,7 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
             bloques = desde_pagina
             hechos_hoy = 0
             saltadas = 0
+            cursor_preparado = False
             # Filas REALES pegadas (cp._copiar cuenta las lineas con datos).
             # Suponer 15 por bloque inflaba el ledger: la ultima pagina de un
             # edificio casi nunca trae 15 filas.
@@ -730,18 +738,22 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                     # pegado y su registro (corte de licencia, watchdog, Excel
                     # cerrnadose), la pagina quedaria sin registrar y la
                     # reanudacion la reharia sin saberlo. Marcando "pegando"
-                    # con las paginas YA confirmadas, al reanudar se rehace
-                    # ESTA misma pagina: duplicado posible, hueco nunca (un
-                    # hueco es silencioso; un duplicado se ve y se borra).
+                    # con las paginas YA confirmadas. La pagina en curso puede
+                    # haberse pegado antes de un corte: requiere revision manual
+                    # para no duplicarla al reanudar.
                     guarda = {k: res.get(k, "") for k in CAMPOS_LEDGER}
                     guarda["estado"] = "pegando"
                     guarda["paginas_vistas"] = bloques + saltadas
                     guarda["filas_copiadas"] = filas_total
                     guarda["hora_fin"] = time.strftime("%H:%M:%S")
-                    guarda["notas"] = f"pegando la pagina {bloques + saltadas + 1}"
+                    guarda["notas"] = (f"operacion de pagina {bloques + saltadas + 1} "
+                                       "en curso; confirmar resultado antes de reanudar")
                     ledger_escribe(guarda)
-                extra = await matriz_extraer.extrae_bloque(s, hwnd, dry, bajar=(hechos_hoy == 0),
-                                           previo=pagina.ULTIMA)
+                extra = await matriz_extraer.extrae_bloque(
+                    s, hwnd, dry, bajar=not cursor_preparado,
+                    previo=pagina.ULTIMA)
+                # Una pagina vacia tambien conserva la posicion del cursor.
+                cursor_preparado = True
                 if extra == "vacia":
                     # La pagina existe pero la columna Suscript viene vacia: no
                     # se copia ni se pega nada, solo se avanza (orden del
@@ -753,7 +765,8 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                         break
                     stp = await pagina.avanza(s, hwnd, prev=ciclo.ULTIMA_IMG)
                     decision = pagina.decide(
-                        stp["estado"], bool((stp.get("senales") or {}).get("no_ibm")))
+                        stp["estado"], bool((stp.get("senales") or {}).get("no_ibm")),
+                        bool(stp.get("sin_cambio")))
                     traza.evento("pagina", stp["estado"] or "desconocido",
                                  detalle=f"{id_} pagina {n} (vacia) decision {decision}")
                     if decision == "fin":
@@ -761,12 +774,22 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                     if decision != "seguir":
                         res["notas"] = f"pagina {n}: estado {stp['estado']}"
                         return res
+                    if not dry:
+                        parcial = {k: res.get(k, "") for k in CAMPOS_LEDGER}
+                        parcial["estado"] = "en_curso"
+                        parcial["paginas_vistas"] = bloques + saltadas
+                        parcial["filas_copiadas"] = filas_total
+                        parcial["hora_fin"] = time.strftime("%H:%M:%S")
+                        parcial["notas"] = (f"pagina {bloques + saltadas} vacia "
+                                            "confirmada; reanudar en la siguiente")
+                        ledger_escribe(parcial)
                     continue
                 bloques += 1
                 hechos_hoy += 1
-                # Filas reales del bloque (0 = no se pudo leer el portapapeles:
-                # se cae al supuesto historico para no dejar el ledger a cero).
-                filas_total += ciclo.ULTIMAS_FILAS or FILAS_POR_BLOQUE
+                # El bloque solo retorna "ok" tras copiar, pegar y posicionar.
+                # El numero de lineas viene del portapapeles local.
+                filas_bloque = ciclo.ULTIMAS_FILAS
+                filas_total += filas_bloque
                 await _pausa(perfil.pausa(inicio, "entre_paginas", objetivo,
                                          paginas=(bloques + saltadas)))
                 # B6 por pagina: lo pegado se registra YA. Si AnyDesk corta la
@@ -793,7 +816,8 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                 traza.evento("volver", "ok", detalle=f"{id_} bloque {n}")
                 stp = await pagina.avanza(s, hwnd, prev=ciclo.ULTIMA_IMG)
                 decision = pagina.decide(
-                    stp["estado"], bool((stp.get("senales") or {}).get("no_ibm")))
+                    stp["estado"], bool((stp.get("senales") or {}).get("no_ibm")),
+                    bool(stp.get("sin_cambio")))
                 traza.evento("pagina", stp["estado"] or "desconocido",
                              detalle=f"{id_} pagina {n} decision {decision}")
                 if decision == "fin":
@@ -803,6 +827,10 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                     return res
             else:
                 res["notas"] = f"tope de {MAX_PAGINAS} paginas alcanzado"
+                res["estado"] = "requiere_revision"
+                res["hora_fin"] = time.strftime("%H:%M:%S")
+                if not dry:
+                    ledger_escribe(res)
                 return res
 
             res["paginas_vistas"] = bloques + saltadas
@@ -827,7 +855,11 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
         except pf.Halt as exc:
             res["notas"] = f"halt: {exc}"
             traza.evento("extraer", "fallo", detalle=f"{id_} {exc}")
-            if cp.MARCA_PEGADO_DUDOSO in str(exc):
+            estado_previo = ledger_leido().get(id_, {}).get("estado")
+            if estado_previo == "pegando":
+                res["estado"] = "requiere_revision"
+                res["notas"] += "; resultado incierto: revisar hoja antes de reintentar"
+            elif cp.MARCA_PEGADO_DUDOSO in str(exc):
                 # Puede que el bloque SI se haya pegado y el remoto solo
                 # tardara en pintarlo. Reintentar la direccion lo duplicaria,
                 # asi que se queda para revision (estado terminal).
@@ -835,6 +867,9 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
             return res
         except Exception as exc:  # noqa: BLE001 - un item nunca tumba la tanda
             res["notas"] = f"{type(exc).__name__}: {exc}"
+            if ledger_leido().get(id_, {}).get("estado") == "pegando":
+                res["estado"] = "requiere_revision"
+                res["notas"] += "; resultado incierto: revisar hoja antes de reintentar"
             return res
 
 
@@ -893,7 +928,8 @@ async def main(hwnd: int, solo_id: str | None, dry: bool = False,
     # tiempo. Para rehacerla a proposito: reset_ledger.py --desde=ID.
     pendientes = [f for f in filas
                   if (hechos.get(f.get("id"), {}).get("estado")
-                      not in ("ok", "no_encontrado", "pegado_dudoso"))]
+                      not in ("ok", "no_encontrado", "pegado_dudoso",
+                              "requiere_revision", "pegando"))]
     if not pendientes:
         print("todo ya procesado (B7)")
         return 0
@@ -907,6 +943,19 @@ async def main(hwnd: int, solo_id: str | None, dry: bool = False,
             # Reanudacion validada por direccion (el id es posicional).
             desde = reanuda_desde(ledger_en_curso(), f)
             res = await procesa(f, hwnd, s, dry, desde_pagina=desde, solo_ficha=solo_ficha)
+            if (not dry and
+                    ledger_leido().get(f.get("id"), {}).get("estado") == "pegando" and
+                    res.get("estado") != "ok"):
+                # El proceso pudo morir antes o despues del pegado. Sin una
+                # lectura fiable del destino no se repite automaticamente.
+                res["estado"] = "requiere_revision"
+                res["notas"] = (res.get("notas", "") +
+                                "; resultado incierto tras interrupcion: revisar hoja")
+                res["hora_fin"] = time.strftime("%H:%M:%S")
+                ledger_escribe(res)
+                print(f"{f.get('id')}: resultado incierto; lote detenido para revision",
+                      flush=True)
+                break
             # Pausa en vez de morir: si la direccion cayo por un corte
             # transitorio de AnyDesk (licencia), se espera a que vuelva, se
             # re-loguea y se reintenta la MISMA direccion reanudando por pagina
@@ -916,16 +965,34 @@ async def main(hwnd: int, solo_id: str | None, dry: bool = False,
                 if not _es_corte(res):
                     break
                 if not await _recupera(s, hwnd):
+                    print(f"{res['id']}: corte sin recuperar; se conserva para "
+                          "la siguiente vuelta", flush=True)
                     break
                 desde = reanuda_desde(ledger_en_curso(), f)
                 res = await procesa(f, hwnd, s, dry, desde_pagina=desde,
                                     solo_ficha=solo_ficha)
+            if _es_corte(res):
+                # No suicidar la direccion ni avanzar al siguiente edificio:
+                # el supervisor conserva el ledger reanudable y la retomara
+                # cuando AnyDesk vuelva a estar disponible.
+                res["notas"] = (res.get("notas", "") +
+                                "; corte no recuperado: se detiene la vuelta")
+                res["hora_fin"] = time.strftime("%H:%M:%S")
+                if not dry:
+                    ledger_escribe(res)
+                print(f"{res['id']}: corte no recuperado; se detiene la vuelta",
+                      flush=True)
+                break
             res["hora_fin"] = time.strftime("%H:%M:%S")
             if not dry:
                 ledger_escribe(res)
             traza.evento("registrar", "ok" if res["estado"] == "ok" else "fallo",
                          detalle=f"{res['id']} {res['estado']}")
             print(json.dumps(res, ensure_ascii=False), flush=True)
+            if res.get("estado") in ("pegado_dudoso", "requiere_revision"):
+                print(f"{res['id']}: requiere revision manual; se detiene el lote",
+                      flush=True)
+                break
             # Punto unico de reencuadre: pase lo que pase con esta direccion
             # (ok, halt o error) la siguiente arranca en el formulario.
             # El Halt del guard de foco (AnyDesk no se pudo poner delante) NO

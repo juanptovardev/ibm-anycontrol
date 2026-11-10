@@ -102,8 +102,8 @@ def ledger():
     p = DATOS / "ledger.csv"
     if not p.exists():
         return []
-    with p.open(encoding="utf-8", newline="") as f:
-        return list(csv.DictReader(f))
+    with p.open(encoding="utf-8-sig", newline="") as f:
+        return list(csv.DictReader(f, delimiter=";"))
 
 
 def control_actual():
@@ -111,6 +111,14 @@ def control_actual():
         return json.loads(CTRL.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {"accion": "libre"}
+
+
+def normaliza_accion(accion):
+    """Convierte el texto visible del panel al contrato del supervisor."""
+    accion = "libre" if accion == "reanudar" else accion
+    if accion not in ("libre", "pausar", "detener"):
+        raise ValueError("accion invalida")
+    return accion
 
 
 def estado():
@@ -130,6 +138,7 @@ def estado():
 
 
 HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MATRIZ · control</title>
 <style>
 :root{--bg:#0c0f0c;--fg:#c8f7c5;--dim:#5d7a5b;--line:#1e2a1e;
@@ -158,9 +167,32 @@ td.k{color:var(--dim);white-space:nowrap}
 footer{position:fixed;bottom:0;left:0;right:0;display:flex;gap:8px;
 padding:8px 16px;background:#0a0d0a;border-top:1px solid var(--line)}
 button{background:#131a13;color:var(--fg);border:1px solid #2a3a2a;
-padding:6px 14px;font:inherit;cursor:pointer}
+ padding:6px 14px;font:inherit;cursor:pointer}
 button:hover{background:#1a241a}
 button.stop{color:var(--bad);border-color:#4a2020}
+@media (max-width:700px){
+ body{font-size:12px;padding-bottom:76px}
+ header{padding:10px 12px;gap:10px;align-items:flex-start}
+ h1{font-size:12px;letter-spacing:1px}
+ #punto{font-size:11px;text-align:right;overflow-wrap:anywhere}
+ main{display:block;height:auto;background:var(--line)}
+ section{padding:12px;min-height:0;border-bottom:1px solid var(--line)}
+ section:first-child{padding-bottom:10px}
+ section:nth-child(2){padding-top:12px}
+ section:last-child{padding-bottom:14px}
+ h2{font-size:11px;margin-bottom:9px}
+ .etapa{padding:4px 0;min-height:24px}
+ .pip{flex:0 0 8px}
+ img{width:100%;height:auto;max-height:46vh;object-fit:contain;object-position:top center}
+ .meta{font-size:11px;overflow-wrap:anywhere}
+ table{font-size:11px;table-layout:fixed;overflow-wrap:anywhere}
+ td{padding:5px 4px;word-break:break-word}
+ td.k{white-space:normal;width:auto}
+ footer{position:fixed;z-index:10;flex-wrap:wrap;gap:6px;
+  padding:8px 10px calc(8px + env(safe-area-inset-bottom));
+  background:#0a0d0a;box-shadow:0 -4px 12px rgba(0,0,0,.35)}
+ button{min-height:44px;min-width:44px;flex:1 1 calc(50% - 6px);padding:8px 10px}
+}
 </style></head><body>
 <header><h1>MATRIZ · CONTROL</h1><div id="punto">—</div></header>
 <main>
@@ -171,15 +203,22 @@ button.stop{color:var(--bad);border-color:#4a2020}
 <section><h2>LEDGER</h2><table id="ledger"></table>
 <h2 style="margin-top:14px">TRAZA</h2><table id="traza"></table></section>
 </main>
-<footer><button onclick="ctl('pausar')">PAUSAR</button>
-<button onclick="ctl('reanudar')">REANUDAR</button>
-<button class="stop" onclick="ctl('detener')">DETENER</button>
-<button class="stop" onclick="matar()">MATAR</button></footer>
+<footer><button type="button" onclick="ctl('pausar')">PAUSAR</button>
+<button type="button" onclick="ctl('reanudar')">REANUDAR</button>
+<button type="button" class="stop" onclick="ctl('detener')">DETENER</button>
+<button type="button" class="stop" onclick="matar()">MATAR</button></footer>
 <script>
 const ETAPAS=["entorno","pin","estado","buscar","extraer","volver","pagina","reconectar","registrar","cierre"];
 const K='__TOKEN__';
-async function ctl(a){await fetch('/api/control?k='+K,{method:'POST',
-headers:{'Content-Type':'application/json'},body:JSON.stringify({accion:a})});}
+async function ctl(a){
+ const accion=a==='reanudar'?'libre':a;
+ try{
+  const r=await fetch('/api/control?k='+K,{method:'POST',
+   headers:{'Content-Type':'application/json'},body:JSON.stringify({accion:accion})});
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  document.getElementById('control').textContent='control: '+(accion==='libre'?'reanudar':accion);
+ }catch(e){document.getElementById('punto').textContent='control no enviado';}
+}
 async function matar(){if(!confirm('Matar el agente ahora? (no se puede deshacer)'))return;
 await fetch('/api/matar?k='+K,{method:'POST'});}
 function cls(r){if(!r)return'';if(/ok|cuenta_matriz|formulario|ficha/.test(r))return'ok';
@@ -197,10 +236,10 @@ document.getElementById('control').textContent='control: '+(s.control||{}).accio
 if(s.captura){const img=document.getElementById('cap');
 const url='/img?k='+K+'&t='+s.captura_ts;if(img.dataset.u!==url){img.dataset.u=url;img.src=url;}
 document.getElementById('capmeta').textContent=s.captura;}
-document.getElementById('ledger').innerHTML='<tr><td class="k">id</td><td class="k">estado</td>'+
-'<td class="k">filas</td></tr>'+(s.ledger||[]).map(r=>
-`<tr><td>${r.id||''}</td><td class="${cls(r.estado)}">${r.estado||''}</td>`+
-`<td>${r.filas_copiadas||''}</td></tr>`).join('');
+  document.getElementById('ledger').innerHTML='<tr><td class="k">id / estado</td><td class="k">paginas</td>'+
+  '<td class="k">filas</td></tr>'+(s.ledger||[]).map(r=>
+ `<tr><td>${r.id||''} / ${r.estado||''}</td><td>${r.paginas_vistas||0}</td>`+
+ `<td>${r.filas_copiadas||0}</td></tr>`).join('');
 document.getElementById('traza').innerHTML=(s.eventos||[]).slice().reverse().map(e=>
 `<tr><td class="k">${(e.ts||'').slice(11,19)}</td><td>${e.etapa||''}</td>`+
 `<td class="${cls(e.resultado)}">${e.resultado||''}</td></tr>`).join('');
@@ -254,7 +293,10 @@ class Handler(BaseHTTPRequestHandler):
             cuerpo = json.loads(self.rfile.read(n) or b"{}")
         except ValueError:
             return self._enviar(400, b"json invalido", "text/plain")
-        accion = cuerpo.get("accion", "libre")
+        try:
+            accion = normaliza_accion(cuerpo.get("accion", "libre"))
+        except ValueError:
+            return self._enviar(400, b"accion invalida", "text/plain")
         DATOS.mkdir(exist_ok=True)
         CTRL.write_text(json.dumps({"accion": accion}), encoding="utf-8")
         return self._enviar(200, json.dumps({"accion": accion}))

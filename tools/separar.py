@@ -65,6 +65,12 @@ COMPLEMENTOS = tuple(sorted(
 
 RE_PREFIJO = re.compile(r"^(%s)\s+(.+)$" % "|".join(PREFIJOS))
 RE_INICIO = re.compile(r"^(\d+)(.*)$")
+# Numero de casa del segundo componente (113-47, 62D-10, 13BIS-27, 58PBIS-05).
+# Corta lo que venga pegado detras: algunas celdas del operador traen varias
+# direcciones o sufijos (BLQ 5, MZA 1_ENT 5, APT 101) en la misma celda, y sin
+# este corte todo eso se iba a parte2 y la busqueda F10 fallaba (medido el
+# 09/11: D117, D488, D1052, D1235... parte2 traia media lista de direcciones).
+RE_SEGUNDO = re.compile(r"^\d{1,4}[A-Z]{0,4}-\d{1,4}[A-Z]{0,2}")
 
 
 def _complementos_de(texto):
@@ -138,6 +144,11 @@ def parse(texto) -> dict:
     if not segundo[0].isdigit():
         return {"estado": "ambiguous", "parte1": None, "parte2": None,
                 "motivo": f"el segundo componente no empieza por numero: {segundo}"}
+    # Se corta en el numero de casa: lo que venga detras es otra direccion o un
+    # sufijo (BLQ/MZA/APT) que no va al campo No.Casa del 5250.
+    m2 = RE_SEGUNDO.match(segundo)
+    if m2:
+        segundo = m2.group(0)
 
     return {"estado": "parsed",
             "parte1": f"{prefijo} {numero}{''.join(complementos)}",

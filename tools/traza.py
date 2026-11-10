@@ -44,7 +44,7 @@ RESULTADOS = {
     "buscar": ("ok", "sin_coincidencia", "fallo"),
     "extraer": ("ok", "vacia", "fallo"),
     "volver": ("ok", "fallo"),
-    "pagina": ("cuenta_matriz", "fin_libro", "desconocido"),
+    "pagina": ("cuenta_matriz", "fin_libro", "desconocido", "desconectado"),
     "reconectar": ("ok", "fallo"),
     "registrar": ("ok", "fallo"),
     "cierre": ("ok", "fallo"),
@@ -70,6 +70,7 @@ POLICIA = {
     ("volver", "ok"): "pagina",
     ("pagina", "cuenta_matriz"): "extraer",
     ("pagina", "fin_libro"): "cierre",
+    ("pagina", "desconectado"): "reconectar",
     ("reconectar", "ok"): "estado",
     ("cierre", "ok"): "siguiente",
 }

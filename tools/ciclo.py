@@ -55,6 +55,7 @@ async def extrae(s, hwnd: int, dry: bool = False, bajar: bool = True,
     pantalla.
     """
     global ULTIMA_IMG, ULTIMAS_FILAS
+    ULTIMAS_FILAS = 0
     if bajar:
         await pf.step(s, "bajar_inicio", "press_keys",
                       {"keys": ["down"] * cp.BAJAR_INICIO,
@@ -109,8 +110,7 @@ async def extrae(s, hwnd: int, dry: bool = False, bajar: bool = True,
         print("DRY: seleccionada, sin copiar", flush=True)
         return "ok"
     filas = await cp._copiar(s)
-    await cp._pegar(s, hwnd)
-    await cp._posicionar(s, hwnd, filas)
+    await cp._pegar_y_posicionar(s, hwnd, filas)
     ULTIMAS_FILAS = filas
     return "ok"
 

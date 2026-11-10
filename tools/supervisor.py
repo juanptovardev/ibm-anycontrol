@@ -46,7 +46,8 @@ LOCK = DATOS / "supervisor.lock"
 # definitivo (el 5250 contesta 'La direccion no esta en el archivo').
 # 'pegado_dudoso' tambien es terminal: el bloque pudo pegarse y el remoto solo
 # tardo en pintarlo; reintentarlo lo duplicaria, asi que queda para revision.
-TERMINALES = ("ok", "no_encontrado", "pegado_dudoso")
+TERMINALES = ("ok", "no_encontrado", "pegado_dudoso", "requiere_revision",
+              "pegando")
 
 
 # ------------------------------------------------------------ lectura de datos
@@ -122,9 +123,10 @@ def resumen(est: dict, cuantas: int, ruta: Path | None = None) -> str:
               f"  en_curso       : {cuenta.get('en_curso', 0)}",
               f"  pendiente      : {cuenta.get('pendiente', 0)}",
               f"  SIN TERMINAR   : {faltan}"]
-    rotas = [i for i, f in est.items() if (f.get("estado") == "error")]
+    rotas = [i for i, f in est.items()
+             if f.get("estado") in ("error", "requiere_revision", "pegando")]
     if rotas:
-        lineas.append("requieren atencion (estado error): " + ", ".join(sorted(rotas)))
+        lineas.append("requieren atencion (error/revision): " + ", ".join(sorted(rotas)))
     return "\n".join(lineas)
 
 
