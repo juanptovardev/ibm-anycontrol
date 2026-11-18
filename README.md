@@ -6,7 +6,7 @@ suscriptores de cuentas matriz y pega los resultados en Google Sheets.
 **Repositorio interno privado.** Esta version contiene contratos y datos operativos
 de la empresa. No hacerlo publico ni activar port-forwarding del panel.
 
-- Agente: https://github.com/juanptovardev/ibm-anycontrol (tag v1.0)
+- Agente: https://github.com/juanptovardev/ibm-anycontrol (rama **release/1.1-oficial-funcional** / v1.1 oficial funcional)
 - MCP: https://github.com/juanptovardev/mcp-anydesk (tag v1.1)
 - Panel en red con token: PAUSAR / DETENER / MATAR.
 - Supervisor: reconecta, reloguea, reanuda y congela fallos repetidos.
@@ -103,6 +103,12 @@ Tambien se aceptan las variables `MATRIZ_5250_USUARIO` y
 `config/jev.json` ya contiene el endpoint, modelo y clave del repositorio
 privado. Si la clave se rota, editarlo solo en el repositorio privado y volver a
 probar; si el repositorio deja de ser privado, rotar la clave inmediatamente.
+
+## Estado 1.1 oficial funcional
+
+- Esta rama publica la copia funcional consolidada como **v1.1 oficial funcional**.
+- **Datos operativos conservados desde GitHub (main):** `datos/direcciones.csv`, `datos/direcciones_segunda.csv`, `datos/direcciones_problema.txt`, `datos/ledger.csv`, `datos/datos_ejemplo.csv` y `datos/ui_token.txt`.
+- **Entorno preparado para la parte dos de direcciones:** la segunda mitad oficial esta en `datos/direcciones_segunda.csv` (datos de GitHub). Para ejecutarla: `copy datos\direcciones_segunda.csv datos\direcciones.csv` y luego `python -m tools.ejecutor --desde 0 --limite 2167`.
 
 ## Arranque
 

@@ -58,13 +58,12 @@ def decide(estado: str | None, no_ibm: bool = False,
     return "abortar"
 
 
-# El 5250 pinta el contador de pagina abajo a la derecha: "08/031" = pagina 8
-# de 31. Sirve para saber DONDE esta el listado. Sin el, reanudar tras un corte
-# era pulsar AvPag a ciegas: un AvPag perdido dejaba hueco o duplicado, y el
-# ledger no lo podia detectar.
+# El 5250 pinta abajo a la derecha un contador con barra. NO es el numero de
+# pagina: medido el 10/11, en un edificio de 2 paginas marca `01/001` y luego
+# `08/001` (el segundo campo es siempre 001). Por eso `reanudar` ya NO lo usa y
+# avanza con AvPag verificado por cambio de pantalla. Se conserva el parser por
+# si algun dia se descifra el formato real.
 RE_CONTADOR = re.compile(r"^(\d{1,3})/(\d{1,3})$")
-# Tope de AvPag por reanudacion: una matriz real no pasa de ~40 paginas.
-MAX_SALTOS = 60
 
 
 def _limpia(texto: str) -> str:
@@ -113,51 +112,42 @@ def pasos_reanudar(actual, objetivo: int):
 
 async def reanudar(s, hwnd: int, objetivo: int, intentos: int = 4,
                    espera: float = 0.9):
-    """Deja el listado en la pagina `objetivo` mirando el contador NN/NNN.
+    """Deja el listado en la pagina `objetivo` avanzando con AvPag verificado.
 
-    Devuelve (pagina_real, nota). Si no se puede leer el contador, devuelve
-    None: avanzar a ciegas puede saltar o duplicar paginas.
+    El contador NN/NNN de abajo a la derecha NO sirve como numero de pagina:
+    medido el 10/11, en un edificio de 2 paginas marca `01/001` y despues
+    `08/001` (el segundo campo es siempre 001). Antes se usaba y la reanudacion
+    abortaba o saltaba. Ahora se avanza `objetivo - 1` veces y CADA AvPag se
+    confirma por cambio de pantalla (PAGINA_MIN_DIFF): un AvPag perdido no
+    cambia nada y se reintenta; si no se puede confirmar, se aborta y la
+    direccion queda para revision. Nunca se avanza a ciegas.
+
+    Devuelve (pagina_real, nota): pagina_real = objetivo si se llego; None si no.
     """
-    actual = total = None
-    for _ in range(intentos):
-        img, _vp = captura(hwnd)
-        _texto, words = ocr_completo(img)
-        actual, total = contador(words, img.width, img.height)
-        if actual is not None:
-            break
-        await asyncio.sleep(espera)
-
-    if actual is None:
-        return None, "sin contador de pagina: reanudacion abortada sin AvPag"
-
-    saltos = pasos_reanudar(actual, objetivo)
-    if saltos == 0:
-        return actual, ""
-    if saltos < 0:
-        return actual, (f"el listado ya estaba en la pagina {actual} "
-                        f"(el ledger decia {objetivo}): no se retrocede")
-
-    dados = 0
-    while saltos > 0 and dados < MAX_SALTOS:
-        await pf.step(s, f"resuma_avpag_{dados}", "press_keys",
-                      {"keys": ["pagedown"]})
-        await asyncio.sleep(1.1)
-        dados += 1
-        img, _vp = captura(hwnd)
-        _texto, words = ocr_completo(img)
-        nuevo, _total = contador(words, img.width, img.height)
-        if nuevo is not None:
-            actual = nuevo
-            saltos = pasos_reanudar(actual, objetivo)
-
-    if saltos > 0:
-        nota = (f"no se llego a la pagina {objetivo}: el contador quedo en "
-                f"{actual} (faltan {saltos})")
-    elif saltos < 0:
-        nota = f"se paso de la pagina {objetivo}: el contador quedo en {actual}"
-    else:
-        nota = ""
-    return actual, nota
+    pasos = max(0, int(objetivo) - 1)
+    if pasos == 0:
+        return objetivo, ""
+    for i in range(pasos):
+        antes, _vp = captura(hwnd)
+        confirmado = False
+        for _j in range(intentos):
+            await pf.step(s, f"resuma_avpag_{i}", "press_keys",
+                          {"keys": ["pagedown"]})
+            await asyncio.sleep(espera)
+            despues, _vp = captura(hwnd)
+            st = clasificar_rapido(despues)
+            if (st.get("estado") == "fin_libro"
+                    or (st.get("senales") or {}).get("fin")):
+                return None, (f"el listado llego al fin de archivo en el paso "
+                              f"{i + 1} de {pasos}: tiene menos paginas que las "
+                              f"registradas")
+            if pf.changed_px(antes, despues) >= PAGINA_MIN_DIFF:
+                confirmado = True
+                break
+        if not confirmado:
+            return None, (f"AvPag {i + 1}/{pasos} sin cambio visible: no se "
+                          f"puede confirmar la posicion")
+    return objetivo, ""
 
 
 async def volver(s, hwnd: int, intentos: int = 3, sondeos: int = 4) -> dict:

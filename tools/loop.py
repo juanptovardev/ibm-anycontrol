@@ -688,9 +688,9 @@ async def procesa(fila: dict, hwnd: int, s, dry: bool = False,
                 objetivo_pag = desde_pagina + 1
                 print(f"reanudando en la pagina {objetivo_pag} "
                       f"({desde_pagina} ya pegadas)", flush=True)
-                # AvPag a ciegas dejaba hueco o duplicado si uno se perdia: se
-                # mira el contador NN/NNN de abajo a la derecha y se para en la
-                # pagina correcta (medido 03/11 con el auditor).
+                # El contador NN/NNN de abajo a la derecha no sirve como pagina
+                # (medido 10/11): `reanudar` avanza con AvPag verificado por
+                # cambio de pantalla, no a ciegas.
                 real, nota = await pagina.reanudar(s, hwnd, objetivo_pag)
                 if nota:
                     print(f"  reanudacion: {nota}", flush=True)
