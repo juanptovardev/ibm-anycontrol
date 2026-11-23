@@ -10,6 +10,7 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(RAIZ, "tools"))
 
 import loop  # noqa: E402
+import matriz_ficha  # noqa: E402
 
 
 class TestLedger(unittest.TestCase):
@@ -53,18 +54,24 @@ class TestLedger(unittest.TestCase):
         self.assertEqual(loop.ledger_leido(self.ruta), {})
 
 
-class TestDatos(unittest.TestCase):
-    def test_contrato_de_columnas(self):
-        filas = loop.lee_datos(loop.DATOS)
-        for f in filas:
-            self.assertIn("id", f)
-            self.assertIn("direccion_parte1", f)
-            self.assertIn("direccion_parte2", f)
+class TestLeeDireccionesContrato(unittest.TestCase):
+    """Un solo contrato de entrada: direcciones.csv, 3 columnas con ';'."""
 
-    def test_ids_unicos(self):
-        filas = loop.lee_datos(loop.DATOS)
-        ids = [f["id"] for f in filas]
-        self.assertEqual(len(ids), len(set(ids)))
+    def test_tres_columnas_id_acentos_y_ficha(self):
+        with tempfile.TemporaryDirectory() as d:
+            ruta = Path(d) / "direcciones.csv"
+            ruta.write_text(
+                "parte1;parte2;ficha\n"
+                "CR 17B;175-77;\n"
+                "CLL 45;12-34;Apto 201 Torre Á\n",
+                encoding="utf-8",
+            )
+            filas = matriz_ficha.lee_direcciones(ruta)
+        self.assertEqual([f["id"] for f in filas], ["D01", "D02"])
+        self.assertEqual(filas[1]["direccion_parte1"], "CLL 45")
+        self.assertEqual(filas[1]["direccion_parte2"], "12-34")
+        self.assertEqual(filas[1]["ficha"], "Apto 201 Torre Á")
+        self.assertEqual(filas[0]["comuna"], "BOG")
 
 
 if __name__ == "__main__":

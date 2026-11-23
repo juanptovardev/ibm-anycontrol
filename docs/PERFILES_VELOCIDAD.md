@@ -69,7 +69,8 @@ Reparto de una pagina de 9 s antes de optimizar:
   estado de la pantalla (listado / ficha / fin de archivo). Recortarlo puede
   hacer que la ficha del edificio se confunda con el formulario y el flujo se
   rompa. Se deja hasta que se pueda validar en vivo.
-- **El Alt+Tab**: es el mayor coste y el mayor riesgo. La alternativa (5250 y
+- **El cambio de ventana**: era el mayor coste y el mayor riesgo con `Alt+Tab`
+  (superado: desde el 03/11 se usa el icono de la taskbar). La alternativa (5250 y
   Chrome lado a lado con clic directo) bajaria el suelo a ~10,7 s/dir, pero
   requiere cambiar el escritorio remoto.
 - **La verificacion post-pegado por contenido**: descartada por el operador

@@ -20,7 +20,7 @@ from PIL import Image
 
 import native_shot
 from _mcp import REPO, need_hwnd
-from _jev import ask
+from _jev import ask, disponible
 
 sys.path.insert(0, REPO)
 from mcp_anydesk_server import window_manager as W  # noqa: E402
@@ -340,7 +340,8 @@ def clasificar_texto(texto: str, usar_jev: bool = True) -> dict:
     }
     if base.get("error"):
         resultado["error"] = base["error"]
-    if resultado["estado"] is None and usar_jev and not base["senales"]["no_ibm"]:
+    if (resultado["estado"] is None and usar_jev and disponible()
+            and not base["senales"]["no_ibm"]):
         recorte = "\n".join(l for l in texto.splitlines() if l.strip())[:2000]
         decision = ask(recorte or "(pantalla vacia)", INSTRUCCION_JEV, ESTADOS,
                        criteria=CRITERIOS_ESTADO)

@@ -16,10 +16,10 @@ lo que dice el obrero y nunca acepta un claim sin re-ejecutarlo.
 |------|---------|------------------|
 | Decisión de pantalla | `tools/estado.py` | ¿Qué pantalla es? (reglas puras primero, Jev si duda) |
 | Lectura de datos | `tools/tabla.py`, `tools/paginar.py` | Filas de suscriptores, paginación del libro |
-| Ejecución mecánica | `tools/flow.py`, `tools/loop.py` | Macro 5250 + ciclo por dirección con blindaje |
+| Ejecución mecánica | `tools/matriz_buscar.py`, `tools/ciclo.py`, `tools/loop.py` | Macro 5250 + ciclo por dirección con blindaje |
 | Transporte | `tools/_mcp.py`, `dev/mcp-anydesk` | Sesión MCP, foco, teclas, clics |
 | Segunda opinión | `tools/_jev.py` | Jev 1.13 free: desempate por texto, no ve imágenes |
-| Bitácora | `datos/ledger.csv`, `evidencia/` | Rastro append-only por item |
+| Bitácora | `datos/ledger.csv`, `evidencia/` | Una fila por dirección, upsert por id |
 
 **Regla de oro**: la velocidad NO depende de un modelo. Las reglas deterministas
 resuelven el 95% de los casos en <5 ms; Jev (~300 ms) solo interviene cuando el
@@ -92,9 +92,9 @@ el campo equivocado.
 
 ## 5. Contratos congelados
 
-- `datos/datos.csv` (entrada): `id,direccion_parte1,direccion_parte2,comuna,cuenta_matriz_esperada,nota`
-- `datos/ledger.csv` (salida, append-only): `id,direccion_parte1,direccion_parte2,comuna,cuenta_matriz_esperada,estado,paginas_vistas,filas_copiadas,hora_inicio,hora_fin,evidencia,notas,reintentos`
-  - La lectura toma la **última** fila por `id`.
+- `datos/direcciones.csv` (entrada): `parte1;parte2;ficha` (ids posicionales D01..)
+- `datos/ledger.csv` (salida, upsert por id): `id,direccion_parte1,direccion_parte2,comuna,cuenta_matriz_esperada,estado,paginas_vistas,filas_copiadas,hora_inicio,hora_fin,evidencia,notas,reintentos`
+  - La lectura toma la fila del `id`.
 - Estados de pantalla: `formulario | cuenta_matriz | sin_coincidencia | error | None`
   (`None` = "no pude clasificar", nunca "la pantalla está mal").
 

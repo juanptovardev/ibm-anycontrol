@@ -4,6 +4,10 @@ Segunda mitad del ciclo: ya se buscó la dirección y estamos en
 `CONSULTA UNIDADES CUENTA MATRIZ`. Ahora se copia el bloque de suscriptores y
 se pega en la hoja de limpieza.
 
+> Cambio de ventana: desde el 03/11 el `Alt+Tab` no llega al escritorio remoto.
+> Se usa el icono de la taskbar (`tools/ventana.py`, `ventana.ir_a`); el `Alt+Tab`
+> queda como último recurso.
+
 ## Receta congelada (no reinterpretar)
 
 | # | Acción | Detalle |
@@ -14,7 +18,7 @@ se pega en la hoja de limpieza.
 | 4 | 14 × `Abajo` | 15 filas en total |
 | 5 | soltar `Shift` | la selección queda fija |
 | 6 | `Ctrl+C` | copia al portapapeles remoto |
-| 7 | `Alt+Tab` | pasa a la hoja de limpieza |
+| 7 | cambio a la hoja (icono de la taskbar) | pasa a Chrome |
 | 8 | `Ctrl+Shift+V` | pega sin formato |
 | 9 | `Ctrl+Abajo` | selecciona hasta el final de la columna |
 | 10 | 1 × `Abajo` | deja la celda lista para el siguiente pegado |
@@ -40,7 +44,7 @@ Constantes del bloque (congeladas, con test que falla si cambian sin querer):
 |---|---|---|
 | G0 | la pantalla es el listado (`estado == cuenta_matriz`) | aborta, no teclea |
 | G1 | la selección es un rectángulo macizo (`densidad ≥ 0.30`) y de tamaño plausible | aborta antes de Ctrl+C |
-| G2 | tras `Alt+Tab` la pantalla **no** es IBM | aborta, no pega |
+| G2 | tras el cambio de ventana la pantalla **no** es IBM | aborta, no pega |
 | G3 | tras `Ctrl+Shift+V` hubo cambio visible (`≥ 3000 px`) | un reintento y aborta |
 
 G1 imprime además el OCR de la primera línea de la selección: si ahí aparece
@@ -80,7 +84,7 @@ sustituir la selección por un gesto de ratón:
 
 ```text
 7xAbajo -> Shift abajo -> CLIC en la ultima celda (ultima fila, columna Suscript)
-        -> Shift arriba -> Ctrl+C -> Alt+Tab -> Ctrl+Shift+V -> Ctrl+Abajo -> Abajo
+        -> Shift arriba -> Ctrl+C -> cambio a la hoja -> Ctrl+Shift+V -> Ctrl+Abajo -> Abajo
 ```
 
 El emulador extiende la selección desde el cursor hasta la celda clicada, así

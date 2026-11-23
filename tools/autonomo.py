@@ -91,6 +91,8 @@ def jev_elige(texto: str, opciones: list[str], instruccion: str,
     Sincrona a proposito: _jev.ask es bloqueante (curl), asi que envolverla en
     un await solo anade ruido y la hace mas dificil de testear.
     """
+    if not _jev.disponible():
+        return None, "jev off: no habilitado"
     r = _jev.ask((texto or "")[:2500], instruccion, list(opciones), criteria=criteria)
     if not r.get("ok"):
         return None, f"jev fallo: {r.get('error')}"

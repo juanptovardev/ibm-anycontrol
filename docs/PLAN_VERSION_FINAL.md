@@ -1,3 +1,5 @@
+﻿> **Histórico.** Plan de la versión final con corte 2026-11-03. El estado vigente está en el README (v1.1).
+
 # Plan de la versión final — Agente 5250
 
 > Documento de trabajo. Todo lo que aquí está **medido** lleva la cifra; lo que es
@@ -116,7 +118,7 @@ Todo lo que hoy solo existe en la rama `piloto100`: los fixes de
 `Ctrl+Abajo`, el supervisor, el separador y el reset.
 **Criterio**: `master` == `piloto100` en el mismo commit y la suite verde.
 
-### T2 — Modularización 0.3 (riesgo: medio, red: 279 tests)
+### T2 — Modularización 0.3 (riesgo: medio, red: 279 tests) — **PARCIAL**
 El sistema hoy son 4 archivos grandes con responsabilidades mezcladas. Objetivo:
 cuatro módulos con una responsabilidad cada uno, y `loop.py` como fachada.
 
@@ -129,6 +131,9 @@ cuatro módulos con una responsabilidad cada uno, y `loop.py` como fachada.
 
 **Criterio**: los 279 tests siguen verdes sin reescribir la lógica (se **extrae**,
 no se rehace) y `tools/loop.py` baja de ~995 líneas.
+
+**Estado (2026-11-19)**: PARCIAL. Las fachadas existen (`matriz_buscar`,
+`matriz_ficha`, `matriz_extraer`), pero `tools/loop.py` sigue en ~1.021 líneas.
 
 ### T3 — Contrato de columnas de la hoja (riesgo: medio)
 Hoy se pega "donde quedó el cursor". El contrato debe:

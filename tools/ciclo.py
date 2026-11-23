@@ -1,11 +1,11 @@
-"""Ciclo unico del 5250: 7 abajo -> Shift+Clic -> copiar -> Alt+Tab -> pegar
+"""Ciclo unico del 5250: 7 abajo -> Shift+Clic -> copiar -> cambio a la hoja -> pegar
 -> desplazar. Termina y deja el resultado para que lo confirme el operador.
 
 Orden (validado por el operador, sin inventar pasos):
   1. 7 x Abajo (sin Shift)                     -> cursor en la primera fila
   2. Shift + CLIC en la ultima celda Suscript  -> selecciona el bloque
   3. Ctrl+C                                    -> copia al portapapeles remoto
-  4. Alt+Tab                                   -> pasa a la hoja
+  4. cambio a la hoja (icono de la taskbar)    -> pasa a la hoja
   5. Ctrl+Shift+V                              -> pega sin formato
   6. Ctrl+Abajo + Abajo                        -> deja la celda lista para el siguiente
 
@@ -15,7 +15,7 @@ columna Suscript viene vacia NO se copia ni se pega nada y se devuelve
 
 No verifica el marco amarillo: esa medicion dio falsos negativos con el clic
 que el operador valido. Las puertas que si quedan: G0 (pantalla = listado),
-G2 (tras Alt+Tab la pantalla NO es IBM) y G3 (el pegado se ve en la hoja).
+G2 (tras el cambio de ventana la pantalla NO es IBM) y G3 (el pegado se ve en la hoja).
 
 Uso:
     python tools/ciclo.py <hwnd>

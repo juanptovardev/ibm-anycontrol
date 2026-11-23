@@ -71,14 +71,14 @@ Variables de entorno: `MCP_ANYDESK_REPO` (repo del fork), `MCP_ANYDESK_HWND`.
 
 | Función | Qué resuelve |
 |---------|--------------|
-| `lee_datos()` | Lee `datos/datos.csv` (contrato congelado) |
-| `ledger_leido()` / `ledger_escribe(...)` | Ledger append-only; lectura toma la última fila por `id` (idempotencia B7) |
+| `lee_direcciones()` | Lee `datos/direcciones.csv` (`parte1;parte2;ficha`) |
+| `ledger_leido()` / `ledger_escribe(...)` | Ledger con upsert por `id` (escritura atomica); la lectura toma la fila del `id` (idempotencia B7) |
 | `espera_estado(...)` | Espera/verifica el estado esperado tras la búsqueda (B3) |
 | `buscar(...)` | Ejecuta la macro 5250 |
 | `verifica_texto(...)` | Verifica por **tinta de píxeles** que el texto quedó en Calle y no en Nombre (B2) |
 | `procesa(...)` | Ciclo de un item con las reglas B1..B7 |
 
-## 7. Macro 5250 — `tools/flow.py`
+## 7. Macro 5250 — `tools/matriz_buscar.py` + `tools/ciclo.py`
 
 Secuencia congelada (una sola sesión MCP):
 `focus_click off` → `pin` → detectar filas → **clic doble** en la celda 1 de Calle →

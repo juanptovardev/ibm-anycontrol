@@ -1,4 +1,6 @@
-﻿# RONDA DE ANÁLISIS Y PRUEBAS — agente matriz IBM (terminal verde 5250)
+﻿> **Histórico.** Ronda de análisis fechada. El estado vigente está en el README (v1.1).
+
+# RONDA DE ANÁLISIS Y PRUEBAS — agente matriz IBM (terminal verde 5250)
 
 Rol: yo actúo como obrero. Tú eres operador/supervisor (pre-login, ventana AnyDesk arriba, aprobación).
 Reglas duras: nunca toco secretos/logins/2FA · nunca Enter · 1 inyección = 1 paso · 1 reintento máximo con aprobación (se cuenta en columna `reintentos` del ledger) · sin éxito asumido sin leer output · stop ante foco perdido, OCR ilegible 2 veces seguidas o gate < umbral.
@@ -66,20 +68,22 @@ Criterio go: T0a–T0c PASS → el mecanismo viaja → sigue el agente personali
 
 ## FASE 3 — Piloto N≤5 con ledger (yo como obrero, tú aprobando cada inyección)
 
-Entrada: copia `datos/datos_ejemplo.csv` → `datos/datos.csv` con los N datos reales (6 columnas: id, direccion_parte1, direccion_parte2, comuna, cuenta_matriz_esperada, nota). Sin `datos/datos.csv` no arranca la fase. Mapeo IBM: parte1 → campo calle, parte2 → campo no-casa, `+` numérico al final de cada parte. La columna `nota` de entrada es solo contexto humano, nunca se inyecta a IBM (las notas del run van en `notas` del ledger). Filas piloto pueden traer `cuenta_matriz_esperada` vacía (entonces la verificación de cuenta es solo visual/operador, no G2).
+Entrada: `datos/direcciones.csv` (3 columnas: `parte1;parte2;ficha`), separador `;`, UTF-8. La columna `ficha` la llena el agente. No se usa `datos/datos.csv` (legado de 6 columnas; quedo en `datos/legacy/`). Mapeo IBM: parte1 → campo calle, parte2 → campo no-casa, `+` numérico al final de cada parte. El id es posicional: `D01`, `D02`... segun la fila.
 
-Pre-flight (antes de arrancar, conteo crudo — `Import-Csv` normaliza al header y NO detecta comas de más/menos):
+> ERRATA (WP-07): el prompt congelado `PROMPT_OBRERO_T-IBM-01.md` dice `datos/datos.csv` y 6 columnas. La entrada real es `datos/direcciones.csv` con 3 columnas. El prompt no se edita; esta errata manda.
+
+Pre-flight (antes de arrancar, conteo crudo — `Import-Csv` normaliza al header y NO detecta `;` de mas/menos):
 ```powershell
-$lines = Get-Content datos/datos.csv
-if ((($lines[0] -split ',').Count) -ne 6) { throw "Header malo" }
+$lines = Get-Content datos/direcciones.csv -Encoding UTF8
+if ((($lines[0] -split ';').Count) -ne 3) { throw "Header malo (esperado parte1;parte2;ficha)" }
 for ($i = 1; $i -lt $lines.Count; $i++) {
-  if ((($lines[$i] -split ',').Count) -ne 6) { throw "Fila mala linea $($i+1): $($lines[$i])" }
+  if ((($lines[$i] -split ';').Count) -ne 3) { throw "Fila mala linea $($i+1): $($lines[$i])" }
 }
 ```
 
-Por cada ítem `i` del `datos/datos.csv`, ejecuto exactamente esto:
+Por cada ítem `i` de `datos/direcciones.csv`, ejecuto exactamente esto:
 
-1. Leo la fila `i` (id, direccion_parte1, direccion_parte2, comuna, cuenta_matriz_esperada). Registro `hora_inicio`.
+1. Leo la fila `i` (`parte1`, `parte2`, `ficha`). El id es `D{i:02}`. Registro `hora_inicio`.
 2. Pantallazo IBM → OCR → comparo contra lo esperado. Cuento en `paginas_vistas` cada pantallazo IBM leído.
 3. Gates: G1 legibilidad OCR ≥ umbral fijado en Fase 1 (paso 5) · G2 similitud dirección ≥ 0.90 · G3 filas a pegar 1–50. Si un gate falla → `esperar_operador`, no avanzo.
 4. `jev_classify` [ejecutar, esperar_operador, abortar] antes de CADA inyección (en modo degradado: tu aprobación manual reemplaza este paso).

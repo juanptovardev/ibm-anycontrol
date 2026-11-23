@@ -32,10 +32,10 @@ tools/
 | --- | --- | --- | --- |
 | `paso_buscar_matriz.py` | `buscar(s, hwnd, det, parte1, parte2)` | G0 = el formulario se leyó bien (Calle/No.Casa correctos por OCR) | ¿el texto está donde debe? → reescribe una vez o `revisar` |
 | `paso_copiar_ficha.py` | `copiar_ficha(s, hwnd)` → dict | la ficha tiene 3 líneas útiles | ¿hay ficha? → columna 3 o `sin_datos` |
-| `paso_extraer.py` | `extraer(s, hwnd, ...)` | G1 = la columna Suscript tiene datos (o Jev dice que sí) · G2 = el destino tras Alt+Tab no es el 5250 · G3 = el pegado se ve (diff ≥ 3000 px) | ¿copio, salto la página o reintento? |
+| `paso_extraer.py` | `extraer(s, hwnd, ...)` | G1 = la columna Suscript tiene datos (o Jev dice que sí) · G2 = el destino tras el cambio de ventana (icono de la taskbar) no es el 5250 · G3 = el pegado se ve (diff ≥ 3000 px) | ¿copio, salto la página o reintento? |
 | `paso_paginar.py` | `paginar(s, hwnd)` / `volver(s, hwnd)` | la señal `fin_libro` | ¿sigo de página, termino o me quedo? |
 | `paso_encabezar.py` | `ir_al_formulario(s, hwnd)` / `ir_al_5250(s, hwnd)` | el estado de pantalla | ¿dónde estoy y cómo vuelvo? |
-| `datos.py` | `lee_direcciones()`, `escribe_ficha()`, `ledger_*()`, `reanuda_desde()` | el contrato de 3 columnas y el append-only | ¿qué falta y por dónde sigo? |
+| `datos.py` | `lee_direcciones()`, `escribe_ficha()`, `ledger_*()`, `reanuda_desde()` | el contrato de 3 columnas y el upsert por id | ¿qué falta y por dónde sigo? |
 | `orquestador.py` | `procesa(fila, hwnd, s, ...)` | B0..B7 y el semáforo | ¿sigo con la siguiente dirección? |
 
 ## Reglas de la refactorización

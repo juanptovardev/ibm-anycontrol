@@ -10,7 +10,8 @@ Uso:
     python tools/recepcion.py --poner "CR 17B" "175-77" --texto "Cuenta: ..."
 
 Columnas del CSV: parte1, parte2, ficha.
-Acepta separador ',' o ';' al leer; siempre escribe con ',' y UTF-8 sin BOM.
+Acepta separador ',' o ';' al leer; siempre escribe con ';', UTF-8 con BOM
+y saltos CRLF, de forma atomica (tools/csvio.py).
 """
 import csv
 import ctypes
@@ -18,11 +19,10 @@ import io
 import sys
 from pathlib import Path
 
+import csvio
+
 REPO = Path(__file__).resolve().parents[1]
 CSV = REPO / "datos" / "direcciones.csv"
-CABECERA = ["parte1", "parte2", "ficha"]
-# Excel en espanol separa con ";": se escribe con ";" y se lee con "," o ";".
-SEP = ";"
 CF_UNICODETEXT = 13
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
@@ -119,14 +119,8 @@ def lee(ruta: Path = CSV) -> list[dict]:
 
 
 def escribe(filas, ruta: Path = CSV) -> None:
-    """Escribe el CSV canonico: comas, UTF-8 sin BOM, saltos CRLF."""
-    buf = io.StringIO()
-    w = csv.writer(buf, delimiter=SEP, lineterminator="\r\n")
-    w.writerow(CABECERA)
-    for f in filas:
-        w.writerow([f["parte1"], f["parte2"], f["ficha"].replace("\n", "\r\n")])
-    ruta.parent.mkdir(parents=True, exist_ok=True)
-    ruta.write_bytes(buf.getvalue().encode("utf-8"))
+    """Escribe el CSV canonico: ';', UTF-8 con BOM, CRLF, atomico."""
+    csvio.escribe_direcciones(filas, ruta)
 
 
 def pon(filas, parte1: str, parte2: str, ficha: str):

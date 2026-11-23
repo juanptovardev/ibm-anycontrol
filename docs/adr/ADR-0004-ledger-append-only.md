@@ -4,6 +4,10 @@
 - **Estado**: Aceptada
 - **Ámbito**: `dev/matriz-ibm-agent`
 
+> **Superado por ADR-0007 (2026-11-19).** El ledger hace upsert por id con
+> escritura atómica; no hubo nunca una fila por intento fallido. Este documento
+> se conserva como historial.
+
 ## Contexto
 El ciclo puede cortarse (AnyDesk cae, la licencia expira, el operador interrumpe,
 falta la red). Rehacer la tanda desde cero duplica pegados en la hoja de Google

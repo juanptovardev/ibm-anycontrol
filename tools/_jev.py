@@ -1,6 +1,8 @@
 """Cliente Jev directo (curl, sin MCP) para clasificar estado en una sola llamada.
 
-Reutiliza la clave viva del CLI de opencode. Devuelve la opcion ganadora y sus
+Jev es OPCIONAL y esta APAGADO por defecto (`MATRIZ_JEV=0`). Solo se usa si el
+operador lo habilita con `MATRIZ_JEV=1` y una clave dedicada. Nunca reutiliza la
+credencial personal del CLI de opencode. Devuelve la opcion ganadora y sus
 probabilidades; nunca lanza por un fallo de red (el bucle decide que hacer).
 """
 import json
@@ -9,39 +11,49 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-AUTH = Path(os.path.expandvars(r"%USERPROFILE%")) / ".local" / "share" / "opencode" / "auth.json"
 CONFIG = Path(__file__).resolve().parent.parent / "config" / "jev.json"
 URL = "https://opencode.ai/inference/systemone/v1/systemone"
 MODEL = "jev-1.13-free"
+ENABLED = False
 
 # config/jev.json del repo (interno de empresa) manda sobre los defaults.
 try:
     _cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
     URL = _cfg.get("url") or URL
     MODEL = _cfg.get("model") or MODEL
+    ENABLED = bool(_cfg.get("enabled"))
 except (OSError, ValueError):
     pass
 
 
+def habilitado() -> bool:
+    """True solo si el operador habilito Jev explicitamente.
+
+    `MATRIZ_JEV` manda sobre config/jev.json: si esta definido en 0/false/off,
+    no se enciende aunque el JSON diga `enabled: true`.
+    """
+    raw = os.environ.get("MATRIZ_JEV")
+    if raw is not None:
+        return raw.strip().lower() not in ("", "0", "false", "off", "no")
+    return ENABLED
+
+
 def _key() -> str:
-    # El repo lleva config/jev.json con la clave del despliegue (repo interno
-    # de empresa, por decision del operador). auth.json del CLI queda como
-    # fallback en la maquina de desarrollo.
+    # 1) Variable de entorno dedicada (recomendada en produccion).
+    env = os.environ.get("MATRIZ_JEV_KEY", "").strip()
+    if env:
+        return env
+    # 2) config/jev.json local, nunca versionado, con clave dedicada.
     try:
         data = json.loads(CONFIG.read_text(encoding="utf-8"))
-        if data.get("key"):
-            return data["key"]
-    except (OSError, ValueError):
-        pass
-    try:
-        data = json.loads(AUTH.read_text(encoding="utf-8"))
+        return (data.get("key") or "").strip()
     except (OSError, ValueError):
         return ""
-    for name in ("opencode-go", "opencode"):
-        entry = data.get(name) or {}
-        if entry.get("key"):
-            return entry["key"]
-    return ""
+
+
+def disponible() -> bool:
+    """Jev solo esta disponible si esta habilitado Y hay clave dedicada."""
+    return habilitado() and bool(_key())
 
 
 def ask(state: str, instructions: str, options: list[str], model: str = MODEL,
@@ -56,9 +68,11 @@ def ask(state: str, instructions: str, options: list[str], model: str = MODEL,
     {opcion: opcion}; para preguntas con significado (que pantalla es, que
     opcion de menu) conviene pasar la descripcion real de cada opcion.
     """
+    if not disponible():
+        return {"ok": False, "error": "jev deshabilitado o sin clave dedicada"}
     key = _key()
     if not key:
-        return {"ok": False, "error": "sin clave en auth.json"}
+        return {"ok": False, "error": "sin clave configurada"}
     crit = dict(criteria) if criteria else {opt: opt for opt in options}
     payload = {
         "model": model,

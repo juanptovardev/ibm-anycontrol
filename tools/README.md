@@ -1,7 +1,7 @@
 # tools/ — piezas definitivas del sistema
 
-Tres piezas, una por etapa. Todo lo demás está en `_experimentos/` (archivo,
-no se borra: son las mediciones que justifican las recetas).
+Tres piezas, una por etapa. Las mediciones que justifican las recetas viven en
+`docs/adr/` y `docs/engineering/`.
 
 ## 1. Formulario (búsqueda de la dirección)
 
@@ -15,7 +15,7 @@ no se borra: son las mediciones que justifican las recetas).
 
 | Archivo | Rol |
 |---|---|
-| `ciclo.py` | **La herramienta aprobada.** 7×Abajo → Shift+Clic última celda Suscript → Ctrl+C → Alt+Tab → Ctrl+Shift+V → Ctrl+Abajo + Abajo. |
+| `ciclo.py` | **La herramienta aprobada.** 7×Abajo → Shift+Clic última celda Suscript → Ctrl+C → cambio a la hoja → Ctrl+Shift+V → Ctrl+Abajo + Abajo. |
 | `click_sel.py` | Elige la celda objetivo por OCR (cabecera `Suscript`, códigos, última fila antes de la barra de teclas). Lo usa `ciclo.py`. |
 | `cp.py` | Plan B (93 teclas) y dueño de las piezas reutilizables: `sel_box`, `_copiar`, `_pegar`, `_posicionar`, `texto_superior`. |
 | `tabla.py` | Parser del listado (Direccion/Apto/Com/Div/Nodo/Suscript/Est) con normalización por campo. |
@@ -27,7 +27,7 @@ no se borra: son las mediciones que justifican las recetas).
 |---|---|
 | `estado.py` | Captura 1:1 → Tesseract → reglas deterministas → Jev solo si hay duda. Estados: `formulario`, `cuenta_matriz`, `sin_coincidencia`, `error`, `None`. |
 | `_jev.py` | Cliente Jev por curl (Bearer fuera de argv). Nunca lanza: devuelve dict con error. |
-| `loop.py` | Bucle por dirección con blindaje B1..B7 y ledger append-only. Aún sin el `ciclo` nuevo integrado. |
+| `loop.py` | Bucle por dirección con blindaje B1..B7 y ledger con upsert por id. Integra `click_sel` y `cp`. |
 
 ## Infraestructura
 
@@ -50,7 +50,7 @@ no se borra: son las mediciones que justifican las recetas).
 | Archivo | Rol |
 |---|---|
 | `traza.py` | Trace leader + policia de transito. Cada paso deja un evento en `datos/traza.jsonl` y una fila en `datos/traza.md`. El mapa `(etapa, resultado) -> accion` decide el siguiente paso; sin regla, se detiene. |
-| `pagina.py` | `volver` (Alt+Tab a IBM) y `avanza` (AvPag + clasificar). `decide` es puro: seguir / fin / abortar. |
+| `pagina.py` | `volver` (icono de la taskbar a IBM) y `avanza` (AvPag + clasificar). `decide` es puro: seguir / fin / abortar. |
 | `vigia.py` | Detecta el dialogo de licencia de AnyDesk y pulsa `Repetir` (ventana local, boton buscado por texto). |
 
 Detalle en `docs/engineering/TRAZA_Y_SEMAFORO.md`.
@@ -66,13 +66,13 @@ loop.procesa  -- B0 reconectar --> B1 estado=formulario --> B2 texto en Calle
         |  F10 --> ficha del edificio --> Shift+F4 --> CONSULTA UNIDADES
         v
 ciclo.extrae  ->  7 abajo (solo el 1er bloque)  ->  Shift+Clic en la celda
-                  de Suscript  ->  Ctrl+C  ->  Alt+Tab  ->  Ctrl+Shift+V
+                  de Suscript  ->  Ctrl+C  ->  cambio a la hoja  ->  Ctrl+Shift+V
                   ->  Ctrl+Abajo  ->  Abajo
         |
         +-- pagina_vacia?  --> AvPag y seguir   (nunca se pega en blanco)
         |
         v
-pagina.volver (Alt+Tab a IBM) --> pagina.avanza (AvPag) --> pagina.decide
+pagina.volver (icono de la taskbar a IBM) --> pagina.avanza (AvPag) --> pagina.decide
         |
         v
 volver_formulario  ->  Escape + F12 + F12  ->  siguiente direccion

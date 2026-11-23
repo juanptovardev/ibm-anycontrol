@@ -1,3 +1,5 @@
+﻿> **Plantilla pendiente.** Se llena con los pantallazos P1-P5 (plantilla 2026-10-26).
+
 # TABLA_RANGOS — de-dónde-a-dónde por sección IBM
 
 > Plantilla 2026-10-26. Se llena con los pantallazos P1–P5:

@@ -1,3 +1,5 @@
+﻿> **Histórico.** Plan de corrida real del 28/10. El estado vigente está en el README (v1.1).
+
 # PLAN — Prueba completa (corrida real, sin `--dry`)
 
 **Fecha:** 28/10/2026

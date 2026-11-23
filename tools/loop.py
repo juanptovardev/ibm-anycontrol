@@ -46,6 +46,7 @@ import recepcion
 import rows as rowdet
 import traza
 import vigia
+import run_record
 import ventana
 from _mcp import connect, need_hwnd
 from estado import captura, clasificar
@@ -55,7 +56,6 @@ from matriz_ficha import (escribe_ficha, lee_direcciones,
                           merge_fichas_pendientes, normaliza_dir)
 
 RAIZ = Path(__file__).resolve().parent.parent
-DATOS = RAIZ / "datos" / "datos.csv"
 LEDGER = RAIZ / "datos" / "ledger.csv"
 # Contrato congelado del repo (ver datos/ledger.csv y PROMPT_OBRERO_T-IBM-01.md).
 CAMPOS_LEDGER = ["id", "direccion_parte1", "direccion_parte2", "comuna",
@@ -118,19 +118,6 @@ async def volver_formulario(s, hwnd: int, intentos: int = 3) -> bool:
         await asyncio.sleep(0.9)
     img, _ = captura(hwnd)
     return clasificar(img, usar_jev=False).get("estado") == "formulario"
-
-
-def lee_datos(ruta: Path = DATOS) -> list[dict]:
-    """Filas de entrada con el contrato de datos.csv."""
-    if not ruta.exists():
-        raise SystemExit(f"falta {ruta}")
-    with open(ruta, encoding="utf-8-sig", newline="") as fh:
-        filas = list(csv.DictReader(fh))
-    for f in filas:
-        faltan = {"id", "direccion_parte1", "direccion_parte2"} - set(f)
-        if faltan:
-            raise SystemExit(f"datos.csv sin columnas {faltan}")
-    return filas
 
 
 def _sep_ledger(ruta: Path) -> str:

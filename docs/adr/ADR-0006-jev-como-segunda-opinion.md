@@ -4,6 +4,10 @@
 - **Estado**: Aceptada
 - **Ámbito**: `dev/matriz-ibm-agent` + `dev/jev-gate`
 
+> **Ver ADR-0008 (Propuesto, 2026-11-19).** Jev quedó apagado por defecto y ya no
+> lee `auth.json` ni la credencial personal de OpenCode. Este documento describe
+> la decisión original.
+
 ## Contexto
 Tres llaves de OpenCode fallaron seguidas (free 429 por cuota, pagadas 401
 `api_key_expired`). La llave viva está en

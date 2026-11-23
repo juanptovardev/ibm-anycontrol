@@ -13,7 +13,7 @@ El flujo no se detiene por una dirección: solo se detiene si no hay escritorio 
 | P1 | Localiza AnyDesk por clase `ad_win*` | STOP (sin remoto no hay nada que hacer) |
 | P2 | Reconecta si hay diálogo "Conexión finalizada" (`vigia --repetir`, espera 25 s) | 3 intentos → STOP |
 | P3 | Login del 5250 si pide usuario (`login.hace_falta` + `entrar`) | 2 intentos → siguiente paso igual |
-| P4 | Alt+Tab al 5250 si el remoto quedó en el navegador (`ir_al_5250`) | 4 intentos → sigue igual |
+| P4 | volver al 5250 si el remoto quedó en el navegador (`ir_al_5250`, icono de la taskbar) | 4 intentos → sigue igual |
 | P5 | Al formulario (`entrar_formulario`; Jev elige opción de menú si no se sabe) | 8 intentos → siguiente dirección |
 
 ## 1. Bloque por dirección (nunca lanza; siempre devuelve un estado)
@@ -68,11 +68,11 @@ mientras no fin_libro y bloques < MAX_PAGINAS (40, el valor real del codigo):
     columna con tinta pero sin códigos → Jev: `vacia` / `con_datos` (umbral 0.6)
         con_datos → extraer igual, ajustando x para no clicar fuera de la columna
     con datos → 7 abajo (solo el primer bloque) → Shift+clic última celda Suscript
-             → Ctrl+C → Alt+Tab → esperar destino con sondeo (hasta 3,6 s + reenvío)
+             → Ctrl+C → cambio a la hoja → esperar destino con sondeo (hasta 3,6 s + reenvío)
              → Ctrl+Shift+V → verificar diff ≥ 3000 px (1 reintento)
              → Ctrl+Abajo + Abajo
              → registrar página en el ledger (`en_curso`, paginas_vistas=N)
-    volver al 5250 (Alt+Tab con sondeo)
+    volver al 5250 (icono de la taskbar con sondeo)
     AvPág → clasificar
         cuenta_matriz → siguiente bloque
         fin_libro → cerrar dirección `ok`
@@ -124,7 +124,7 @@ Cualquier otra cosa se anota y se sigue.
 |---|---|
 | Bloques pegados en la hoja | Google Sheets `LIMPIEZA RR` → pestaña `temp borrador` |
 | Ficha de cada edificio (cuenta, nombre, dirección) | columna C de `datos/direcciones.csv`; si Excel la bloquea → `datos/fichas_pendientes.csv` |
-| Estado por dirección | `datos/ledger.csv` (append-only; última fila por id manda) |
+| Estado por dirección | `datos/ledger.csv` (upsert por id; una fila por dirección) |
 | Traza del semáforo | `datos/traza.jsonl` + `datos/traza.md` |
 | Evidencia | `evidencia/*.png` (ciclo-antes, cp-listo, página) |
 | Dossier | `tools/verifications/autonomo-<ts>.md` |

@@ -249,13 +249,23 @@ async def _pegar(s, hwnd: int) -> None:
           f"error={st.get('error')}", flush=True)
     if not no_ibm:
         raise pf.Halt("G2 no se pudo llegar a la hoja: no se pega")
-    # Contrato de columnas (T3): antes de pegar se comprueba que la pantalla
-    # es la hoja esperada (DIRECCION / EDIFICIO / SUSCRIPTOR). La captura
-    # "antes" es la del sondeo de G2: no hace falta otra.
-    ok_hoja, nota_hoja = hoja.verifica(antes)
-    print(f"G2b contrato de columnas: {nota_hoja}", flush=True)
+    # Identidad de la hoja (T3): titulo, URL, pestana y cabeceras. Si la
+    # captura llego vacia o el OCR no leyo nada, se recaptura una vez: la hoja
+    # puede estar a medio pintar. Un titulo/URL/pestana equivocados no se
+    # reintentan: no van a cambiar solos y pegar ahi es el peor fallo posible.
+    ok_hoja, nota_hoja = False, "sin captura"
+    for intento in range(1, 3):
+        ok_hoja, nota_hoja = hoja.identidad(antes)
+        print(f"G2b intento {intento}: {nota_hoja}", flush=True)
+        if ok_hoja:
+            break
+        if "sin captura" not in nota_hoja and "OCR vacio" not in nota_hoja:
+            break
+        if intento < 2:
+            await asyncio.sleep(0.6)
+            antes, _vp = captura(hwnd)
     if not ok_hoja:
-        raise pf.Halt(f"G2b {nota_hoja}: no se pega")
+        raise pf.Halt(f"G2b {nota_hoja}: no se pega, requiere revision")
     # El portapapeles es la fuente de las filas, pero la diferencia de pantalla
     # no demuestra que estas celdas recibieron ese contenido. Se conserva como
     # senal operativa solamente; el ledger se mantiene incierto si el render no

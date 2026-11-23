@@ -4,7 +4,7 @@ Gobernanza completa: `docs/engineering/GUIA_ORQUESTACION_IA.md` (método ORCA) �
 `docs/engineering/EXECUTION_BATCHES.md` (prompts congelados) ·
 `docs/engineering/ESTADO_ORQUESTACION.md` (bitácora) ·
 `docs/engineering/TRACE_FUNCIONES.md` (catálogo anti-reescritura) ·
-`docs/adr/` (decisiones) · `tools/verifications/dossier-motor-5250.md` (evidencia).
+`docs/adr/` (decisiones) · `FINIQUITO/evidencia/` (evidencia de cierre).
 
 Motor: `tools/loop.py` (ciclo por dirección) + `tools/estado.py` (qué pantalla es) +
 `tools/tabla.py` (qué dice el listado) + `tools/paginar.py` (AvPág) + `tools/_jev.py` (Jev).
@@ -20,7 +20,7 @@ Motor: `tools/loop.py` (ciclo por dirección) + `tools/estado.py` (qué pantalla
 | B3 | Si el estado tras la búsqueda no es el esperado, el item se aborta | `loop.espera_estado` | Distingue `sin_coincidencia` (resultado de negocio) de `error` (algo se rompió) |
 | B4 | El foco lo vigila el server: si la ventana local roba el foco, la llamada MCP falla | `mcp-anydesk` focus guard | `Halt` inmediato: el item se marca error, no se sigue tecleando |
 | B5 | Máximo 1 reintento por item, con la misma secuencia | `loop.REINTENTOS` | Al segundo fallo se abandona el item |
-| B6 | Todo item deja rastro: fila en `datos/ledger.csv` + captura en `evidencia/` | `loop.ledger_escribe`, `pf.shot` | Bitácora append-only: cada intento es una fila |
+| B6 | Todo item deja rastro: fila en `datos/ledger.csv` + captura en `evidencia/` | `loop.ledger_escribe`, `pf.shot` | Una fila por dirección (upsert por id): el intento actualiza su fila |
 | B7 | Idempotencia: lo que ya está `ok` no se reprocesa | `loop.ledger_leido` | Se puede relanzar la tanda sin duplicar trabajo |
 | B8 | Una página **sin suscriptores** se salta: no se copia, no se pega | `click_sel.pagina_vacia` + `ciclo.extrae` | Vacía = 0 códigos en la columna Suscript + tinta verde < 40. Si hay tinta pero el OCR no ve códigos, se pregunta a Jev y solo se salta con conf ≥ 0.6 |
 
@@ -81,7 +81,7 @@ versión anterior; con la de hoy se estima en ~1 m 30 s.
 ### Cerrado en la versión definitiva (27/10, T-IBM-04)
 
 1. ~~Pegar en Chrome~~ → resuelto: la selección con **Shift+Clic** (mecánica
-   aprobada por el operador) + `Alt+Tab` + `Ctrl+Shift+V`. Verificado en vivo:
+   aprobada por el operador) + cambio de ventana por icono de taskbar + `Ctrl+Shift+V`. Verificado en vivo:
    150 filas pegadas en 10 páginas.
 2. ~~Retorno del listado al formulario~~ → resuelto: en `CONSULTA UNIDADES` la
    única tecla de la barra es `F12=Anterior`; con el teclado inhibido (`A X II`)

@@ -21,6 +21,13 @@ OPCIONES = ["formulario", "cuenta_matriz", "sin_coincidencia", "error"]
 
 
 class TestJev(unittest.TestCase):
+    def setUp(self):
+        # El cliente se prueba aislado de la politica de despliegue: aqui Jev
+        # esta habilitado; `disponible()` se prueba aparte.
+        self._hab = patch.object(_jev, "habilitado", return_value=True)
+        self._hab.start()
+        self.addCleanup(self._hab.stop)
+
     def test_sin_clave(self):
         with patch.object(_jev, "_key", return_value=""):
             r = _jev.ask("texto", "instruccion", OPCIONES)
@@ -79,6 +86,35 @@ class TestJev(unittest.TestCase):
             r = _jev.ask("texto", "instruccion", OPCIONES)
         self.assertFalse(r["ok"])
         self.assertIn("FileNotFoundError", r["error"])
+
+
+class TestDisponible(unittest.TestCase):
+    def test_apagado_por_defecto(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MATRIZ_JEV", None)
+            os.environ.pop("MATRIZ_JEV_KEY", None)
+            with patch.object(_jev, "_key", return_value="k"):
+                self.assertFalse(_jev.disponible())
+
+    def test_encendido_requiere_clave(self):
+        with patch.dict(os.environ, {"MATRIZ_JEV": "1"}, clear=False):
+            with patch.object(_jev, "_key", return_value=""):
+                self.assertFalse(_jev.disponible())
+            with patch.object(_jev, "_key", return_value="k"):
+                self.assertTrue(_jev.disponible())
+
+    def test_cero_manda_sobre_config(self):
+        with patch.dict(os.environ, {"MATRIZ_JEV": "0"}, clear=False):
+            with patch.object(_jev, "_key", return_value="k"), \
+                 patch.object(_jev, "ENABLED", True):
+                self.assertFalse(_jev.disponible())
+
+    def test_sin_env_usa_config(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MATRIZ_JEV", None)
+            with patch.object(_jev, "_key", return_value="k"), \
+                 patch.object(_jev, "ENABLED", True):
+                self.assertTrue(_jev.disponible())
 
 
 if __name__ == "__main__":

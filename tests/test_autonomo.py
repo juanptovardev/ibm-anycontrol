@@ -45,6 +45,11 @@ class TestOpcionesMenu(unittest.TestCase):
 
 
 class TestJevElige(unittest.TestCase):
+    def setUp(self):
+        self._disp = patch.object(autonomo._jev, "disponible", return_value=True)
+        self._disp.start()
+        self.addCleanup(self._disp.stop)
+
     def test_confianza_alta_devuelve_la_opcion(self):
         with patch.object(autonomo._jev, "ask",
                           return_value={"ok": True, "choice": "6",
@@ -67,6 +72,14 @@ class TestJevElige(unittest.TestCase):
             opcion, nota = autonomo.jev_elige("texto", ["1"], "instruccion")
         self.assertIsNone(opcion)
         self.assertIn("429", nota)
+
+    def test_jev_apagado_no_llama(self):
+        with patch.object(autonomo._jev, "disponible", return_value=False), \
+             patch.object(autonomo._jev, "ask") as mock:
+            opcion, nota = autonomo.jev_elige("texto", ["1"], "instruccion")
+        self.assertIsNone(opcion)
+        self.assertIn("off", nota)
+        mock.assert_not_called()
 
 
 class TestJevOpcionMenu(unittest.TestCase):

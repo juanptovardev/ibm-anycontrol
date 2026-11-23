@@ -1,3 +1,5 @@
+﻿> **Histórico.** Esquema de versionado 0.1/0.2/0.3 de octubre. El proyecto va por 1.1.
+
 # Versionado del agente 5250 — 0.1 / 0.2 / 0.3
 
 Esquema acordado con el operador:
@@ -16,7 +18,8 @@ lanzar pilotos hasta que el operador lo autorice.
 ## 0.1 — la linea base congelada
 
 Tag `0.1`, rama `v0.1`, copia de trabajo en `dev/matriz-ibm-agent-0.1` con sus
-datos (`direcciones.csv`, `ledger.csv`, `datos.csv`). Es el sistema que pasteo
+datos (`direcciones.csv`, `ledger.csv`); el viejo `datos.csv` de 6 columnas
+quedo como legado en `datos/legacy/datos.csv` y no es entrada del runtime. Es el sistema que pasteo
 5 direcciones, 765 filas, con fin de archivo automatico y reanudacion sola.
 
 ## 0.2 — lo que se implemento

@@ -1,0 +1,7 @@
+{
+  "_comment": "Copiar a config/jev.json solo si el operador aprueba Jev. enabled=false y key vacia dejan Jev apagado; el agente usa solo las reglas locales.",
+  "enabled": false,
+  "url": "https://opencode.ai/inference/systemone/v1/systemone",
+  "model": "jev-1.13-free",
+  "key": ""
+}

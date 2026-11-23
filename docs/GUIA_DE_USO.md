@@ -105,7 +105,7 @@ El supervisor deja:
 | `python tools\reset_ledger.py --desde=D105` | Rehace desde una dirección |
 | `python tools\registrar_pegado.py D01=1` | Registra a mano una página ya pegada |
 | `python tools\ui.py` | Panel de control en http://127.0.0.1:8765 |
-| `python -m unittest discover -s tests` | Suite (345 tests) |
+| `python -m unittest discover -s tests` | Suite (450 tests, WP-08) |
 
 ### Parar
 

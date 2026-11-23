@@ -1,4 +1,4 @@
-# IBM AnyControl v1
+# IBM AnyControl v1.1
 
 Agente autonomo que opera un terminal IBM 5250 remoto via AnyDesk, extrae
 suscriptores de cuentas matriz y pega los resultados en Google Sheets.
@@ -6,11 +6,11 @@ suscriptores de cuentas matriz y pega los resultados en Google Sheets.
 **Repositorio interno privado.** Esta version contiene contratos y datos operativos
 de la empresa. No hacerlo publico ni activar port-forwarding del panel.
 
-- Agente: https://github.com/juanptovardev/ibm-anycontrol (rama **release/1.1-oficial-funcional** / v1.1 oficial funcional)
+- Agente: https://github.com/juanptovardev/ibm-anycontrol (version 1.1, rama `main`)
 - MCP: https://github.com/juanptovardev/mcp-anydesk (tag v1.1)
 - Panel en red con token: PAUSAR / DETENER / MATAR.
 - Supervisor: reconecta, reloguea, reanuda y congela fallos repetidos.
-- Estado de referencia: 394 tests verdes.
+- Estado de referencia: 450 tests verdes (corrida WP-08 del FINIQUITO).
 
 ## Que hace
 
@@ -48,7 +48,7 @@ prompt de la seccion siguiente. La estructura de carpetas debe quedar asi:
 Pegar este texto como primera instruccion en la laptop nueva:
 
 ```text
-Configura IBM AnyControl v1 en esta laptop siguiendo README.md, sin inventar rutas.
+Configura IBM AnyControl v1.1 en esta laptop siguiendo README.md, sin inventar rutas.
 
 1. Verifica Windows, Python 3.11+, Git y Tesseract-OCR 5.x en PATH.
 2. Verifica que estos repos esten lado a lado:
@@ -61,7 +61,7 @@ Configura IBM AnyControl v1 en esta laptop siguiendo README.md, sin inventar rut
    %USERPROFILE%\.matriz\creds.json
    con las credenciales del 5250 proporcionadas por el operador. No muestres ni
    imprimas la clave. No la guardes en el repositorio.
-5. No cambies config/jev.json, datos/direcciones.csv ni datos/ledger.csv.
+5. No cambies datos/direcciones.csv ni datos/ledger.csv.
    Son contratos internos preparados para esta instalacion.
 6. Ejecuta desde ibm-anycontrol, usando el Python del venv de mcp-anydesk:
    python -m unittest discover -s tests
@@ -98,23 +98,24 @@ Formato:
 Tambien se aceptan las variables `MATRIZ_5250_USUARIO` y
 `MATRIZ_5250_CLAVE`. Nunca imprimir la clave ni pegarla en un log.
 
-### Configuracion de Jev
+### Configuracion de Jev (opcional, apagado por defecto)
 
-`config/jev.json` ya contiene el endpoint, modelo y clave del repositorio
-privado. Si la clave se rota, editarlo solo en el repositorio privado y volver a
-probar; si el repositorio deja de ser privado, rotar la clave inmediatamente.
+Jev manda texto del OCR del 5250 (puede incluir direcciones y suscriptores) a
+un servicio de terceros. Por eso queda **apagado por defecto**: `MATRIZ_JEV=0`
+o `enabled: false`. Sin clave dedicada, `disponible()` devuelve `False` y el
+agente usa solo las reglas locales. Nunca reutiliza la credencial personal de
+opencode ni una clave real en el repositorio.
 
-## Estado 1.1 oficial funcional
-
-- Esta rama publica la copia funcional consolidada como **v1.1 oficial funcional**.
-- **Datos operativos conservados desde GitHub (main):** `datos/direcciones.csv`, `datos/direcciones_segunda.csv`, `datos/direcciones_problema.txt`, `datos/ledger.csv`, `datos/datos_ejemplo.csv` y `datos/ui_token.txt`.
-- **Entorno preparado para la parte dos de direcciones:** la segunda mitad oficial esta en `datos/direcciones_segunda.csv` (datos de GitHub). Para ejecutarla: `copy datos\direcciones_segunda.csv datos\direcciones.csv` y luego `python -m tools.ejecutor --desde 0 --limite 2167`.
+Para encenderlo hace falta una decision explicita del operador (D-01), una
+clave dedicada (`MATRIZ_JEV_KEY` o el campo `key` de `config/jev.json`, que es
+local y no se versiona) y el DPA/base legal documentados en
+`docs/PRIVACY.md`. Crear el JSON desde `config/jev.example.json`.
 
 ## Arranque
 
 ```text
-arranca.bat            # visor + supervisor (perfil psicopata, teclas rapidas)
-arranca.bat humano     # sigiloso | humano | rapido | psicopata
+arranca.bat            # visor + supervisor (perfil humano, teclas rapidas)
+arranca.bat rapido     # sigiloso | humano | rapido | psicopata
 ```
 
 `arranca.bat` calcula la ruta del venv relativa al repositorio hermano; no
@@ -124,7 +125,7 @@ Manual:
 
 ```
 python tools\ui.py                                            # panel en :8765
-python tools\supervisor.py --perfil=psicopata --teclas=rapido --max-vueltas=20 --horas=30 --tope-vuelta=21600
+python tools\supervisor.py --perfil=humano --teclas=rapido --max-vueltas=20 --horas=30 --tope-vuelta=21600
 ```
 
 ## Panel desde el celular
@@ -153,9 +154,9 @@ netsh advfirewall firewall add rule name="Matriz UI 8765" dir=in action=allow pr
 | --------------------- | ----------------------------------------- | --- |
 | `datos/direcciones.csv` | BOM + CRLF + `;` cabecera `parte1;parte2;ficha` | entrada, ids posicionales D01.. |
 | `datos/ledger.csv`      | BOM + CRLF + `;` 13 campos, upsert por id | estado por direccion, reanudacion |
-| `config/jev.json`       | `{url, model, key}`                       | clave y endpoint de Jev |
+| `config/jev.json`       | `{url, model, key}`                       | local, no versionado; se crea desde `config/jev.example.json` |
 | `%USERPROFILE%\.matriz\creds.json` | `{usuario, clave}`             | login del 5250 (fuera del repo, gana sobre el de repo) |
-| `config/creds.json`     | `{usuario, clave}`                       | login del 5250 (en repo, fallback portable) |
+| `config/creds.json`     | `{usuario, clave}`                       | login del 5250 (local, no versionado; fallback del de `.matriz`) |
 | `datos/control.json`    | `{"accion": pausar\|detener\|libre}`      | runtime, lo escribe el panel |
 
 El campo `ficha` es multilinea entre comillas y lleva `;` dentro: parsear SIEMPRE
@@ -201,7 +202,7 @@ mas lento que el techo no se anade pausa.
 ## Tests
 
 ```
-python -m unittest discover -s tests    # 394 tests de referencia, sin pytest
+python -m unittest discover -s tests    # 450 tests de referencia (WP-08), sin pytest
 ```
 
 ## Notas de operacion

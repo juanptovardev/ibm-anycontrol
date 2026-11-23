@@ -16,7 +16,7 @@ y verificaciones. Creado: 2026-10-27.
   normalización OCR por campo.
 - `tools/paginar.py` — AvPág con paradas (suscriptores / fin de libro / tope /
   estado ambiguo).
-- `tools/loop.py` — ciclo por dirección, blindaje B1..B7, ledger append-only.
+- `tools/loop.py` — ciclo por dirección, blindaje B1..B7, ledger con upsert por id.
 - `tools/_jev.py` — cliente Jev por `curl` (clave en archivo temporal, fuera del argv).
 - `tools/_mcp.py` — transporte MCP compartido (env-overridable, exit codes).
 - `tests/` — 54 tests verdes.
@@ -104,3 +104,55 @@ Creados los documentos de gobernanza: `GUIA_ORQUESTACION_IA.md`,
   siempre con `window_manager.find_viewport(root)`.
 - `Tesseract` lee la 'o' acentuada como '6' ("conexi6n") → las regex aceptan
   ambas formas; conviene no bajar el listón al añadir señales nuevas.
+
+
+---
+
+## 2026-11-19 - Consolidación enterprise ultimate y handoff para crítica
+
+**Objetivo (operador):** Optimizar a versión enterprise ultimate en copia, borrar basura residual de desarrollo sin tocar vital, completar documentación y dejar handoff para sesión nueva que critique/analice sin contexto. No ejecutar pruebas.
+
+**Acciones realizadas:**
+- Verificado destino C:\Users\juanp_8h8f07l\OneDrive\Desktop\Proyectos\IBM AGENT (126 archivos, 9 dirs). Sin procesos activos relacionados.
+- Creada copia de respaldo íntegra: C:\Users\juanp_8h8f07l\OneDrive\Desktop\Proyectos\IBM AGENT - copia.
+- Revisión de higiene: no se encontraron __pycache__, *.pyc, *.log, *.err, *.tmp, *.bak, prueba_*, evidencia/, _experimentos/, erifications/. No se eliminó nada vital.
+- Añadido PLAN_DEFINITIVO_MEJORAS.md (plan consolidado de mejoras, riesgos y próximos pasos).
+- Añadido HANDOFF_CRITICA_SESION_NUEVA.md (contexto completo para crítica/análisis sin contexto previo, árbol de archivos, contratos, riesgos conocidos, pendientes).
+- No se modificó lógica en 	ools/. No se ejecutaron pruebas.
+
+**Hallazgos/restricciones documentados:**
+- Carpeta sin .git; trazabilidad de cambios limitada a bitácora documental.
+- config/ vacío (credenciales por env o %USERPROFILE%\.matriz\creds.json según 	ools/credenciales.py).
+- rranca.bat depende de venv hermano ..\mcp-anydesk\.venv\Scripts\python.exe.
+- datos/ledger.csv conserva rutas de evidencia del entorno original (dev\matriz-ibm-agent-piloto100\evidencia\...).
+- Pendientes previos siguen vigentes: T-IBM-05 (corrida real 5 direcciones) y C-01 (cierre ciego) en EXECUTION_BATCHES.md.
+
+**Estado:** CONSOLIDACIÓN DOCUMENTAL COMPLETA / PENDIENTE CRÍTICA EXTERNA Y PRUEBAS OPERATIVAS.
+
+---
+
+## 2026-11-19 (2) - Publicación v1.1 profesional y correcciones anti-slop
+
+**Objetivo (operador):** Unificar la versión visible a 1.1 y publicar el repo con
+la documentación corregida, sin relleno.
+
+**Acciones realizadas:**
+- README a v1.1: título, referencia al remoto (versión 1.1, rama `main`), estado
+  de tests (450, WP-08) y config real (`config/jev.json` ya no se versiona; se crea
+  desde `config/jev.example.json`).
+- Corregido "append-only" a upsert por id en ESTADO_ORQUESTACION, ESCALAMIENTO,
+  GUIA_ORQUESTACION_IA, TRACE_FUNCIONES, FLUJO_PEGADO, DISENO_FLUJO_DEFINITIVO,
+  MODULARIZACION y tools/README.
+- Corregido el cambio de ventana: donde describía presente, `Alt+Tab` pasa a
+  icono de la taskbar (FLUJO_PEGADO, DISENO_FLUJO_DEFINITIVO, MODULARIZACION,
+  PERFILES_VELOCIDAD, tools/README, tools/ciclo.py).
+- Corregido `datos.csv` (6 columnas) a `datos/direcciones.csv` (`parte1;parte2;ficha`)
+  y `tools/flow.py` (inexistente) a `matriz_buscar.py` + `ciclo.py`.
+- Corregidos conteos de tests obsoletos (279/292/345/394) a 450 (WP-08) donde se
+  presenta como estado vigente.
+- Creado ADR-0007 (ledger con upsert por id) con banner en ADR-0004.
+- Creado ADR-0008 (Jev apagado por defecto y PII, estado Propuesto) con aviso en ADR-0006.
+- T2 de PLAN_VERSION_FINAL marcado PARCIAL (fachadas creadas; `loop.py` ~1.021 líneas).
+
+**Estado:** DOCUMENTACIÓN ALINEADA CON EL CÓDIGO / PENDIENTE COMMIT Y PUSH.
+

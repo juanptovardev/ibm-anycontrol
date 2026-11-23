@@ -1,5 +1,4 @@
 """escribe_ficha con el CSV bloqueado por Excel: no tumba el item y no pierde la ficha."""
-import builtins
 import csv
 import sys
 import tempfile
@@ -10,6 +9,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
 import loop
+import matriz_ficha
 
 
 class TestEscribeFichaBloqueado(unittest.TestCase):
@@ -36,19 +36,18 @@ class TestEscribeFichaBloqueado(unittest.TestCase):
     def test_csv_bloqueado_no_tumba_y_deja_respaldo(self):
         with tempfile.TemporaryDirectory() as d:
             ruta = self._csv(Path(d))
-            real_open = builtins.open
-
-            def open_bloqueado(file, mode="r", *a, **k):
-                if ("w" in mode and str(file).endswith("direcciones.csv") or
-                        "r" in mode and str(file).endswith("ledger.csv")):
-                    raise PermissionError(13, "Permission denied", str(file))
-                return real_open(file, mode, *a, **k)
-
-            with patch.object(builtins, "open", open_bloqueado):
+            # Excel bloquea el destino: el temporal se escribe, pero
+            # os.replace falla y el original queda intacto.
+            with patch.object(matriz_ficha.csvio.os, "replace",
+                              side_effect=PermissionError(13, "Permission denied", str(ruta))):
                 with patch.object(loop.time, "sleep", lambda s: None):
                     aviso = loop.escribe_ficha("D01", "Cuenta: 34377", ruta)
 
             self.assertIn("bloqueado", aviso)
+            with open(ruta, encoding="utf-8-sig", newline="") as fh:
+                filas_csv = list(csv.DictReader(fh, delimiter=";"))
+            self.assertEqual(filas_csv[0]["ficha"], "")
+            self.assertEqual(filas_csv[1]["ficha"], "")
             respaldo = Path(d) / "fichas_pendientes.csv"
             self.assertTrue(respaldo.exists())
             with open(respaldo, encoding="utf-8", newline="") as fh:
@@ -61,11 +60,14 @@ class TestEscribeFichaBloqueado(unittest.TestCase):
             self.assertEqual(filas[0][2], "175-77")
             self.assertIn("34377", filas[0][3])
 
-    def test_id_fuera_de_rango_no_escribe(self):
+    def test_id_fuera_de_ids_no_escribe(self):
         with tempfile.TemporaryDirectory() as d:
             ruta = self._csv(Path(d))
-            self.assertEqual(loop.escribe_ficha("D99", "x", ruta), "")
-            self.assertEqual(loop.escribe_ficha("ZZZ", "x", ruta), "")
+            self.assertIn("no esta en ids", loop.escribe_ficha("D99", "x", ruta))
+            self.assertIn("no esta en ids", loop.escribe_ficha("ZZZ", "x", ruta))
+            with open(ruta, encoding="utf-8-sig", newline="") as fh:
+                filas = list(csv.DictReader(fh, delimiter=";"))
+            self.assertEqual([f["ficha"] for f in filas], ["", ""])
 
 
 if __name__ == "__main__":

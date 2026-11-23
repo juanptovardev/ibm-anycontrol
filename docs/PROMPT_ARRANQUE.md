@@ -13,8 +13,13 @@ cambia, se cambia aquí y se commitea.
 | P1 | AnyDesk conectado a la oficina | `get_system_status` → `anydesk_windows` no vacío |
 | P2 | Emulador 5250 abierto en `CONSULTA EDIFICIO-CUENTA MATRIZ` | `python tools/estado.py <hwnd>` → `"estado": "formulario"` |
 | P3 | Chrome abierto en la hoja destino (`LIMPIEZA RR`) | captura del viewport / ojo del humano |
-| P4 | `datos/datos.csv` con las direcciones del día | `python -c "import csv;print(len(list(csv.DictReader(open('datos/datos.csv',encoding='utf-8-sig')))))"` |
+| P4 | `datos/direcciones.csv` con las direcciones del día (3 columnas: `parte1;parte2;ficha`) | `python -c "import csv;print(len(list(csv.DictReader(open('datos/direcciones.csv',encoding='utf-8-sig'),delimiter=';')))))"` |
 | P5 | Ventana local del humano fuera del foco | el focus guard del server lo detecta y aborta |
+
+> ERRATA (WP-07): `PROMPT_OBRERO_T-IBM-01.md` esta congelado y dice
+> `datos/datos.csv` con 6 columnas. La entrada real es `datos/direcciones.csv`
+> con 3 columnas (`parte1;parte2;ficha`). El prompt no se edita; esta errata manda.
+> El viejo `datos/datos.csv` se movio a `datos/legacy/datos.csv` y no es entrada.
 
 Si P1–P4 no se cumplen, el agente **no teclea nada** y pide lo que falta.
 
@@ -61,7 +66,7 @@ REGLAS DURAS (violarlas es un fallo, no una variante):
 PROHIBIDO (necesita humano):
 - Logins, 2FA, contraseñas, cambio de claves.
 - Borrar o reordenar filas ya escritas en la hoja.
-- Cambiar el contrato de datos.csv o del ledger sin aprobación.
+- Cambiar el contrato de direcciones.csv o del ledger sin aprobación.
 
 SALIDA ESPERADA:
 - Una línea JSON por fila: {"id","estado","paginas_vistas","filas_copiadas","notas"}.

@@ -3,12 +3,13 @@
 Solo lectura sobre el estado (traza, ledger, capturas) y una bandera de
 control que el bucle consulta entre bloques.
 
-Uso: python tools/ui.py            -> http://127.0.0.1:8765/?k=<token>
+Uso: python tools/ui.py            -> http://127.0.0.1:8765/
      python tools/ui.py --puerto 9000
+     (PowerShell) $env:MATRIZ_UI_BIND='0.0.0.0'; python tools/ui.py   -> opt-in LAN
 
-Escucha en 0.0.0.0 para poder mirarlo desde el celular en la misma red.
-Toda peticion exige el token (?k=...): sin el responde 403 porque el panel
-muestra la pantalla del remoto y direcciones de clientes.
+Por defecto escucha solo en 127.0.0.1. El token se envia por header
+X-Token; no va en la URL. El panel pide el token una vez y lo guarda en
+sessionStorage. El token vive en datos/ui_token.txt con ACL del usuario.
 """
 import csv
 import json
@@ -17,6 +18,8 @@ import secrets
 import socket
 import subprocess
 import sys
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -26,27 +29,80 @@ DATOS = REPO / "datos"
 EVID = REPO / "evidencia"
 CTRL = DATOS / "control.json"
 PUERTO = 8765
+TOKEN_MIN = 22
+_HITS = {}
+_HITS_LOCK = threading.Lock()
+
+
+def _acl(p):
+    """Restringe el archivo al usuario actual (Windows); falla cerrado."""
+    if os.name != "nt":
+        return
+    user = (os.environ.get("USERNAME") or "").strip()
+    if not user:
+        raise RuntimeError("USERNAME ausente; no se puede asegurar ui_token.txt")
+    try:
+        r = subprocess.run(
+            ["icacls", str(p), "/inheritance:r", "/grant:r", f"{user}:F"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f"no se pudo asegurar ACL de ui_token.txt: {exc}") from exc
+    if r.returncode:
+        detalle = (r.stderr or r.stdout or "icacls fallo").strip()
+        raise RuntimeError(f"no se pudo asegurar ACL de ui_token.txt: {detalle}")
 
 
 def _token():
-    """Token de acceso. Env MATRIZ_TOKEN o datos/ui_token.txt (se crea solo)."""
+    """Token de acceso. Env MATRIZ_TOKEN o datos/ui_token.txt (se crea solo).
+
+    El token generado tiene >= 22 caracteres. Si el archivo tiene uno mas
+    corto, se rota. El archivo se restringe al usuario actual con icacls.
+    """
     tok = (os.environ.get("MATRIZ_TOKEN") or "").strip()
-    if tok:
+    if len(tok) >= TOKEN_MIN:
         return tok
+    if tok:
+        print("AVISO: MATRIZ_TOKEN ignorado; debe tener al menos 22 caracteres.")
     p = DATOS / "ui_token.txt"
     try:
         t = p.read_text(encoding="utf-8").strip()
-        if t:
+        if len(t) >= TOKEN_MIN:
+            _acl(p)
             return t
     except OSError:
         pass
     DATOS.mkdir(exist_ok=True)
-    t = secrets.token_hex(4)
+    t = secrets.token_urlsafe(16)
     p.write_text(t, encoding="utf-8")
+    _acl(p)
     return t
 
 
 TOKEN = _token()
+
+
+def bind_host():
+    """Host de escucha. Default 127.0.0.1; LAN solo con MATRIZ_UI_BIND."""
+    return (os.environ.get("MATRIZ_UI_BIND") or "127.0.0.1").strip() or "127.0.0.1"
+
+
+def rate_ok(ip, ahora=None):
+    """True si la IP no supero 20 peticiones en los ultimos 60 s."""
+    ahora = time.monotonic() if ahora is None else ahora
+    with _HITS_LOCK:
+        inicio, n = _HITS.get(ip, (ahora, 0))
+        if ahora - inicio >= 60:
+            inicio, n = ahora, 0
+        n += 1
+        _HITS[ip] = (inicio, n)
+        return n <= 20
+
+
+def confirmado_matar(path):
+    """El endpoint /api/matar exige ?confirm=1."""
+    q = parse_qs(urlparse(path).query)
+    return q.get("confirm", [""])[0] == "1"
 
 
 def ip_red():
@@ -145,6 +201,13 @@ HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
 --ok:#54e06a;--warn:#e0c454;--bad:#e05a5a}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.45 Consolas,monospace}
+#login{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;
+align-items:center;justify-content:center;gap:12px;background:var(--bg);padding:24px}
+#login.hide{display:none}
+#login input{background:#131a13;color:var(--fg);border:1px solid #2a3a2a;
+ padding:10px 12px;font:inherit;width:min(320px,100%)}
+#login button{min-width:140px}
+#logerr{color:var(--bad);min-height:1em;margin:0}
 header{display:flex;justify-content:space-between;align-items:center;
 padding:10px 16px;border-bottom:1px solid var(--line)}
 h1{font-size:13px;margin:0;letter-spacing:2px;color:var(--dim)}
@@ -194,6 +257,7 @@ button.stop{color:var(--bad);border-color:#4a2020}
  button{min-height:44px;min-width:44px;flex:1 1 calc(50% - 6px);padding:8px 10px}
 }
 </style></head><body>
+<div id="login"><h2>TOKEN</h2><input id="tok" type="password" autocomplete="off" autofocus onkeydown="if(event.key==='Enter')entrar()"><button type="button" onclick="entrar()">ENTRAR</button><p id="logerr"></p></div>
 <header><h1>MATRIZ · CONTROL</h1><div id="punto">—</div></header>
 <main>
 <section><h2>SEMAFORO</h2><div id="etapas"></div>
@@ -209,23 +273,32 @@ button.stop{color:var(--bad);border-color:#4a2020}
 <button type="button" class="stop" onclick="matar()">MATAR</button></footer>
 <script>
 const ETAPAS=["entorno","pin","estado","buscar","extraer","volver","pagina","reconectar","registrar","cierre"];
-const K='__TOKEN__';
+let K=sessionStorage.getItem('matriz_token')||'';
+async function entrar(){
+ const t=document.getElementById('tok').value.trim();
+ const r=await fetch('/api/estado',{headers:{'X-Token':t}});
+ if(r.ok){K=t;sessionStorage.setItem('matriz_token',t);
+  document.getElementById('login').classList.add('hide');tick();}
+ else{document.getElementById('logerr').textContent='token invalido';}
+}
 async function ctl(a){
  const accion=a==='reanudar'?'libre':a;
  try{
-  const r=await fetch('/api/control?k='+K,{method:'POST',
-   headers:{'Content-Type':'application/json'},body:JSON.stringify({accion:accion})});
+  const r=await fetch('/api/control',{method:'POST',
+   headers:{'Content-Type':'application/json','X-Token':K},body:JSON.stringify({accion:accion})});
   if(!r.ok)throw new Error('HTTP '+r.status);
   document.getElementById('control').textContent='control: '+(accion==='libre'?'reanudar':accion);
  }catch(e){document.getElementById('punto').textContent='control no enviado';}
 }
 async function matar(){if(!confirm('Matar el agente ahora? (no se puede deshacer)'))return;
-await fetch('/api/matar?k='+K,{method:'POST'});}
+await fetch('/api/matar?confirm=1',{method:'POST',headers:{'X-Token':K}});}
 function cls(r){if(!r)return'';if(/ok|cuenta_matriz|formulario|ficha/.test(r))return'ok';
 if(/sin_coincidencia|desconocido|fin_libro/.test(r))return'warn';return'bad';}
 async function tick(){
 try{
-const s=await fetch('/api/estado?k='+K).then(r=>r.json());
+ const resp=await fetch('/api/estado',{headers:{'X-Token':K}});
+ if(resp.status===401){document.getElementById('login').classList.remove('hide');return;}
+ const s=await resp.json();
 const u=s.ultimo||{},cur=u.etapa||'';
 document.getElementById('etapas').innerHTML=ETAPAS.map(e=>
 `<div class="etapa ${e===cur?'on':''}"><div class="pip"></div><span>${e}</span>`+
@@ -233,9 +306,14 @@ document.getElementById('etapas').innerHTML=ETAPAS.map(e=>
 document.getElementById('punto').textContent=cur?
 `${cur} · ${u.resultado||''} · ${u.accion||''}`:'sin actividad';
 document.getElementById('control').textContent='control: '+(s.control||{}).accion;
-if(s.captura){const img=document.getElementById('cap');
-const url='/img?k='+K+'&t='+s.captura_ts;if(img.dataset.u!==url){img.dataset.u=url;img.src=url;}
-document.getElementById('capmeta').textContent=s.captura;}
+ if(s.captura){const img=document.getElementById('cap');
+ if(img.dataset.t!==String(s.captura_ts)){
+  const r=await fetch('/img',{headers:{'X-Token':K}});
+  if(r.ok){const b=await r.blob();if(img.dataset.blob)URL.revokeObjectURL(img.dataset.blob);
+   const u=URL.createObjectURL(b);img.dataset.blob=u;img.src=u;}
+  img.dataset.t=String(s.captura_ts);
+ }
+ document.getElementById('capmeta').textContent=s.captura;}
   document.getElementById('ledger').innerHTML='<tr><td class="k">id / estado</td><td class="k">paginas</td>'+
   '<td class="k">filas</td></tr>'+(s.ledger||[]).map(r=>
  `<tr><td>${r.id||''} / ${r.estado||''}</td><td>${r.paginas_vistas||0}</td>`+
@@ -244,7 +322,13 @@ document.getElementById('traza').innerHTML=(s.eventos||[]).slice().reverse().map
 `<tr><td class="k">${(e.ts||'').slice(11,19)}</td><td>${e.etapa||''}</td>`+
 `<td class="${cls(e.resultado)}">${e.resultado||''}</td></tr>`).join('');
 }catch(e){document.getElementById('punto').textContent='panel sin conexion';}}
-tick();setInterval(tick,1000);
+async function arranca(){
+ if(!K){document.getElementById('login').classList.remove('hide');return;}
+ const r=await fetch('/api/estado',{headers:{'X-Token':K}});
+ if(r.ok){document.getElementById('login').classList.add('hide');tick();}
+ else{document.getElementById('login').classList.remove('hide');}
+}
+arranca();setInterval(()=>{if(K)tick();},5000);
 </script></body></html>"""
 
 
@@ -252,24 +336,33 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_a):
         pass
 
-    def _enviar(self, code, body, tipo="application/json"):
+    def _enviar(self, code, body, tipo="application/json", extra=None):
         datos = body if isinstance(body, bytes) else body.encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", tipo)
         self.send_header("Content-Length", str(len(datos)))
+        for k, v in (extra or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(datos)
 
+    def _rate(self):
+        if rate_ok(self.client_address[0]):
+            return True
+        self._enviar(429, b"demasiadas peticiones", "text/plain",
+                     {"Retry-After": "60"})
+        return False
+
     def _autorizado(self):
-        q = parse_qs(urlparse(self.path).query)
-        return q.get("k", [""])[0] == TOKEN or self.headers.get("X-Token") == TOKEN
+        return self.headers.get("X-Token") == TOKEN
 
     def do_GET(self):
-        if not self._autorizado():
-            return self._enviar(403, b"no autorizado", "text/plain")
+        if not self._rate():
+            return
         if urlparse(self.path).path == "/":
-            return self._enviar(200, HTML.replace("__TOKEN__", TOKEN),
-                                "text/html; charset=utf-8")
+            return self._enviar(200, HTML, "text/html; charset=utf-8")
+        if not self._autorizado():
+            return self._enviar(401, b"no autorizado", "text/plain")
         if self.path.startswith("/api/estado"):
             return self._enviar(200, json.dumps(estado(), ensure_ascii=False))
         if self.path.startswith("/img"):
@@ -280,9 +373,13 @@ class Handler(BaseHTTPRequestHandler):
         return self._enviar(404, b"no existe", "text/plain")
 
     def do_POST(self):
+        if not self._rate():
+            return
         if not self._autorizado():
-            return self._enviar(403, b"no autorizado", "text/plain")
+            return self._enviar(401, b"no autorizado", "text/plain")
         if self.path.startswith("/api/matar"):
+            if not confirmado_matar(self.path):
+                return self._enviar(400, b"falta confirm=1", "text/plain")
             DATOS.mkdir(exist_ok=True)
             CTRL.write_text(json.dumps({"accion": "detener"}), encoding="utf-8")
             return self._enviar(200, json.dumps({"matar": matar()}))
@@ -306,9 +403,13 @@ def main(argv):
     puerto = PUERTO
     if "--puerto" in argv:
         puerto = int(argv[argv.index("--puerto") + 1])
-    srv = ThreadingHTTPServer(("0.0.0.0", puerto), Handler)
-    print(f"panel local:   http://127.0.0.1:{puerto}/?k={TOKEN}")
-    print(f"panel celular: http://{ip_red()}:{puerto}/?k={TOKEN}")
+    host = bind_host()
+    srv = ThreadingHTTPServer((host, puerto), Handler)
+    visible = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+    print(f"panel: http://{visible}:{puerto}/")
+    print(f"token: {DATOS / 'ui_token.txt'}")
+    if host == "0.0.0.0":
+        print(f"LAN:   http://{ip_red()}:{puerto}/")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

@@ -5,6 +5,7 @@ Run: python -m unittest discover -s tests
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
@@ -79,6 +80,22 @@ class TestConstantesDelOperador(unittest.TestCase):
         self.assertEqual(cp.SEL_ROW_MIN, 300)
         self.assertEqual(cp.SEL_COL_MIN, 100)
         self.assertEqual(cp.PASTE_MIN_DIFF, 3000)
+
+
+class TestNoPegaSiHojaMala(unittest.IsolatedAsyncioTestCase):
+    async def test_identidad_false_no_pega(self):
+        """Si la hoja no es la esperada, no se envia Ctrl+Shift+V."""
+        fake = object()
+        with patch.object(cp.ventana, "ir_a", new=AsyncMock()), \
+                patch.object(cp.pf, "step", new=AsyncMock()) as step, \
+                patch.object(cp, "captura", return_value=(fake, None)), \
+                patch.object(cp, "tipo_pixeles", return_value="navegador"), \
+                patch.object(cp.hoja, "identidad",
+                             return_value=(False, "no se lee el titulo")):
+            with self.assertRaises(cp.pf.Halt):
+                await cp._pegar(object(), 123)
+        nombres = [c.args[1] for c in step.await_args_list if len(c.args) > 1]
+        self.assertNotIn("ctrl_shift_v", nombres)
 
 
 if __name__ == "__main__":

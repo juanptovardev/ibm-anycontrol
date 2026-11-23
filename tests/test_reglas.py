@@ -67,10 +67,11 @@ class TestReglas(unittest.TestCase):
         from unittest.mock import patch
         from PIL import Image
 
-        with patch.object(estado, "ask", return_value={
-                "ok": True, "choice": "formulario", "confidence": 0.35,
-                "confianza": 0.35,
-                "probabilities": {"formulario": 0.51, "error": 0.45}}):
+        with patch.object(estado, "disponible", return_value=True), \
+             patch.object(estado, "ask", return_value={
+                 "ok": True, "choice": "formulario", "confidence": 0.35,
+                 "confianza": 0.35,
+                 "probabilities": {"formulario": 0.51, "error": 0.45}}):
             r = estado.clasificar(Image.new("RGB", (40, 20), "black"), usar_jev=True)
         self.assertIsNone(r["estado"])
         self.assertEqual(r["fuente"], "jev")
@@ -83,6 +84,7 @@ class TestReglas(unittest.TestCase):
         # Pantalla con marcadores del 5250 (sin cabecera CONSULTA): la regla no
         # decide, Jev si, y el veredicto se acepta porque hay marcador real.
         with patch.object(estado, "ocr_completo", return_value=("Cuenta Edificio : 34377 F10=Buscar Direccion", [])), \
+                patch.object(estado, "disponible", return_value=True), \
                 patch.object(estado, "ask", return_value={
                     "ok": True, "choice": "cuenta_matriz", "confidence": 0.9,
                     "confianza": 0.9,
@@ -111,6 +113,7 @@ class TestReglas(unittest.TestCase):
         from PIL import Image
 
         with patch.object(estado, "ocr_completo", return_value=("tabla de direcciones y suscriptores", [])), \
+                patch.object(estado, "disponible", return_value=True), \
                 patch.object(estado, "ask", return_value={
                     "ok": True, "choice": "cuenta_matriz", "confidence": 0.9,
                     "confianza": 0.9,
@@ -118,6 +121,16 @@ class TestReglas(unittest.TestCase):
             r = estado.clasificar(Image.new("RGB", (40, 20), "black"), usar_jev=True)
         self.assertIsNone(r["estado"])
         self.assertIn("sin marcadores IBM", r["error"])
+
+    def test_jev_apagado_no_llama_ask(self):
+        from unittest.mock import patch
+
+        with patch.object(estado, "disponible", return_value=False), \
+             patch.object(estado, "ask") as mock:
+            r = estado.clasificar_texto(
+                "Cuenta Edificio : 34377 F10=Buscar Direccion", usar_jev=True)
+        self.assertIsNone(r["estado"])
+        mock.assert_not_called()
 
     def test_codigos_en_minusculas_siguen_contando(self):
         texto = "CONSULTA UNIDADES CUENTA MATRIZ\ncasax xt121e\ncasax nfe700\n"
